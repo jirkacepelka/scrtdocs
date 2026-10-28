@@ -1,0 +1,239 @@
+---
+title: "Validator"
+description: "Sign with one consensus key after the node is caught up on secret-4. Do not rewind a key that has signed."
+slug: "operators/validator"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+Wait until the node is caught up on `secret-4`, then sign with one consensus key.
+
+Finish [SGX prerequisites](/operators/sgx), [Sync](/operators/full-node), and [Register the node](/operators/register) against the consensus key already in `priv_validator_key.json`. Require `catching_up` false. Use an account key that can pay fees and the self-bond. That account is not the consensus key.
+
+:::caution
+Two live copies of one consensus key double-sign. Stop the old process before the new one signs.
+:::
+
+## Two keys
+
+| Key | Store | Algorithm | Prefix | Role |
+| --- | --- | --- | --- | --- |
+| Account key | Keyring under `~/.secretd` | secp256k1 | `secret` | Signs `create-validator`, `edit-validator`, `delegate`, `unjail`, commission withdraw |
+| Consensus | `config/priv_validator_key.json` | ed25519 | `secretvalcons` | Signs votes and proposals. One live copy. |
+
+Set the prefixes before any command: account `secret`, validator `secretvaloper`, consensus `secretvalcons`. Coin type `529`, purpose `44`. The SDK constant `sdk.CoinType` is still `118`. `keys add` defaults to the sealed coin type, so a normal software key is `529`. `--ledger` without `--legacy-hd-path` also forces `529`. `--legacy-hd-path` forces `118`.
+
+```bash
+secretd keys show EXAMPLE_KEY --bech val -a
+secretd tendermint show-validator
+secretd tendermint show-node-id
+```
+
+`--bech` accepts `acc`, `val`, or `cons`. `val` prints `secretvaloper`. `show-validator` loads the key file and the state file. A missing state file makes it exit. `tendermint` is an alias of `comet` and `cometbft`. `show-node-id` reads `config/node_key.json` and is the P2P id, not a validator id.
+
+Keyring backends: `os` (compiled default), `file`, `kwallet`, `pass`, `test`, `memory`. `test` stores the key unencrypted. Do not use `test` for the account key that creates the validator. `keys export` prints the armored private key to stderr. `secretd` or `secretcli` both work if they use the same home and keyring. The process that signs blocks is `secretd`.
+
+## Files
+
+| Path | Backup | Second live process |
+| --- | --- | --- |
+| `config/priv_validator_key.json` | Yes. Losing it means a new consensus key and a new validator. | Never. |
+| `data/priv_validator_state.json` | Yes, after the signer has stopped. Last height, round, and step. Mode `0600`. | Never as a second signer. |
+| Account mnemonic or `keys export` armor | Yes, offline. | You may keep the keyring on a laptop that only broadcasts. Keep another copy. |
+| `config/node_key.json` | Optional. Losing it changes the peer id. | Do not run two nodes with the same file. That collides the peer id. It does not tombstone. |
+| `genesis.json`, `config.toml` | Operational copies. | Fine. |
+| `new_seed.json`, `/opt/secret/.sgx_secrets/*`, `node-master-key.txt` | Registration page. Not the consensus key. | Do not publish. Do not treat them as a validator backup. |
+
+`priv_validator_laddr` switches the node to a remote signer. If that is set, do not also run the same key file in a local `secretd`. This binary does not ship a TMKMS config.
+
+## Steps
+
+1. Consensus key exists, from `init` on this home or copied from the machine you are replacing, and the old process is stopped.
+2. Finish registration against that same key. Do not use `auto-register`. The quote is bound to the ed25519 key already on disk unless you passed `--unbound-attestation`.
+3. `catching_up` false on `secret-4`. Creating while `catching_up` is true does not jail by itself. A bonded validator that is still catching up will miss blocks. Wait. Re-read `/status`.
+4. Fund the account key:
+
+```bash
+secretd q bank balances $(secretd keys show -a EXAMPLE_KEY) \
+  --node https://rpc.secret.mainnet.secret3.dev
+```
+
+5. Back up the consensus key, the state file, and the account mnemonic before the create transaction.
+6. Send `create-validator` once. A second create with the same account or the same consensus pubkey is rejected.
+7. Confirm, then watch `signing-info` if the validator bonded.
+
+Broadcast `create-validator` from any machine that has the account key and the pubkey JSON. The laptop does not need the consensus key file. The process that signs blocks must be the one whose pubkey you submitted.
+
+## create-validator
+
+One JSON file.
+
+```bash
+secretd tx staking create-validator ./validator.json \
+  --from EXAMPLE_KEY \
+  --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 \
+  --gas-prices 0.1uscrt
+```
+
+`--from` is required. `--chain-id` is not marked required. Pass `secret-4`. `--node` defaults to `tcp://localhost:26657`. `--gas` defaults to `200000` if omitted, not `auto`. `--gas-adjustment` defaults to `1.0` and is ignored when `--gas` is a number. `--gas-prices` defaults to `0.25uscrt`. Supply `--fees` or `--gas-prices`. `1.3` is an example adjustment. The node’s own `minimum-gas-prices` should be `0.1uscrt` (the package default is `0.0125uscrt`).
+
+`--ip` and `--node-id` only affect a memo, and only with `--generate-only`, and only if a p2p port is also set. This command does not register `--p2p-port`, so those two flags do not register a peer.
+
+`validator.json`. Strings below are examples except the pubkey shape. `pubkey` is the object `show-validator` prints.
+
+```json
+{
+  "pubkey": {"@type":"/cosmos.crypto.ed25519.PubKey","key":"EXAMPLE_BASE64_FROM_show-validator"},
+  "amount": "1000000uscrt",
+  "moniker": "EXAMPLE_MONIKER",
+  "identity": "",
+  "website": "",
+  "security": "",
+  "details": "",
+  "commission-rate": "0.10",
+  "commission-max-rate": "0.20",
+  "commission-max-change-rate": "0.01",
+  "min-self-delegation": "1"
+}
+```
+
+Empty `moniker` is rejected. Amount and the three commission strings are required. Denom is `uscrt`. 1 SCRT = 1,000,000 uscrt. `1000000uscrt` is an example of 1 SCRT, not a governance minimum. `min-self-delegation` is an integer in uscrt. `"1"` means 1 uscrt. It must be positive, and `amount` must be at least that integer.
+
+Consensus power is `tokens / 1_000_000`. The bonded-set walk stops at the first validator whose power is 0 and does not bond it. A self-bond under 1 SCRT has power 0. `min-self-delegation` `"1"` is 1 uscrt.
+
+Commission at create, decimals in `[0, 1]`: `rate` ≤ `max-rate`, `max-change-rate` ≤ `max-rate`, `rate` ≥ on-chain `min_commission_rate`. `max-rate` and `max-change-rate` cannot be changed later. Live `min_commission_rate` is `0`, so 0% is legal.
+
+Description limits, bytes: moniker 70, identity 3000, website 140, security contact 140, details 280.
+
+Pubkey type must be in the consensus param. Live value is `ed25519` only.
+
+Rejected creates: `ErrValidatorOwnerExists`, `ErrValidatorPubKeyExists`. There is no delete-validator transaction.
+
+```bash
+secretd q staking validator $(secretd keys show EXAMPLE_KEY --bech val -a) \
+  --node https://rpc.secret.mainnet.secret3.dev
+```
+
+Prefer that query over grepping every moniker.
+
+## Active set
+
+| Field | Value |
+| --- | --- |
+| `bond_denom` | `uscrt` |
+| `max_validators` | `80` |
+| `unbonding_time` | `1814400s` (21 days) |
+| `max_entries` | `7` |
+| `historical_entries` | `10000` |
+| `min_commission_rate` | `0` |
+| Bonded count that day | `23` |
+
+Under 80, every jailed-false validator with power greater than 0 is bonded. Query the set again before you rely on a stake floor.
+
+More self-bond later. `1000000uscrt` is an example:
+
+```bash
+secretd tx staking delegate secretvaloper1EXAMPLE 1000000uscrt \
+  --from EXAMPLE_KEY --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 --gas-prices 0.1uscrt
+```
+
+## edit-validator
+
+Omit any description flag you do not want to change. The default for each is `[do-not-modify]`. The flag is `--security-contact`, not a positional. `--commission-rate` is the only commission flag on edit.
+
+```bash
+secretd tx staking edit-validator \
+  --from EXAMPLE_KEY \
+  --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 --gas-prices 0.1uscrt \
+  --new-moniker "EXAMPLE_NEW" \
+  --identity "EXAMPLE" \
+  --website "https://example.invalid" \
+  --security-contact "security@example.invalid" \
+  --details "EXAMPLE" \
+  --commission-rate "0.05" \
+  --min-self-delegation "1000000"
+```
+
+Rules: at most one commission change per 24 hours, including the first edit after create. New rate in `[0, 1]`, at least `min_commission_rate`, at most the max rate frozen at create. An increase larger than `max-change-rate` is rejected. A decrease is not limited by `max-change-rate`. The 24-hour rule still applies. `--min-self-delegation` on edit must be a positive integer strictly greater than the current minimum, and at most `validator.Tokens` (total stake, not only your self-bond). Raising it does not jail in that function. If you set the minimum above your self-bond while other stake keeps `Tokens` high enough for the edit to pass, you cannot unjail until you self-bond back up.
+
+## Signing
+
+`FilePV` stores the last signed height, round, and step. `CheckHRS` errors on a regression. The same height, round, and step with the same sign-bytes reuses the stored signature. Different sign-bytes at the same step return `conflicting data` and do not produce a second vote signature. The watermark is local to the file. A second process with the same key and its own state file does not see it.
+
+Height `0` is an empty watermark. `secretd tendermint unsafe-reset-all` keeps the key if the key file exists, then calls `Reset` on the state. Do not run it on a mainnet key that has signed. If the key file is absent, the same command generates a new key. `reset-state` deletes block and app databases and does not touch the key or the state file. `unsafe-reset-priv-validator` resets the watermark the same way. A missing state file does not become height `0` by itself. `LoadFilePV` exits if either file is missing.
+
+Vote extensions are off. Live `vote_extensions_enable_height` is `0`.
+
+## Moving the signer
+
+Stop the old process. Copy `priv_validator_key.json` and `data/priv_validator_state.json`. Remove the key from the old disk. Start the new process only after its block height is at least the height in the copied state file. If the new node is behind that height, `CheckHRS` refuses to sign until it catches up (missed blocks, not a double sign). If the copied state is older than blocks this key already signed, the new process will sign those heights again. Register the new machine before `secretd start` will load a seed, and bind the quote to this same key. Follow [Register the node](/operators/register) after the key is in place. If the hardware change changes the PPID, follow [Allowlist and machine replacement](/operators/allowlist).
+
+## Sentry
+
+Default P2P listens on `tcp://0.0.0.0:26656`, `pex` true, `addr_book_strict` true. On the validator:
+
+```toml
+persistent_peers = "SENTRY_NODE_ID@10.0.0.1:26656,SENTRY_NODE_ID@10.0.0.2:26656"
+pex = false
+```
+
+`SENTRY_NODE_ID` and the addresses are examples. Leave `seeds` empty if the only peers should be those sentries. On each sentry, `private_peer_ids` is a comma-separated list of node ids, not `id@ip:port`. `unconditional_peer_ids` is the same id list. Peer id command is `secretd tendermint show-node-id`. Restart is `sudo systemctl restart secret-node` when that unit runs the process.
+
+A fresh home leaves `persistent_peers` empty. Put your sentry ids in that field.
+
+## Slashing
+
+| Field | Value |
+| --- | --- |
+| `signed_blocks_window` | `22500` |
+| `min_signed_per_window` | `0.5` |
+| `downtime_jail_duration` | `600s` |
+| `slash_fraction_downtime` | `0.0001` (0.01%) |
+| `slash_fraction_double_sign` | `0.05` (5%) |
+
+Downtime fires when missed blocks in the window exceed `11250`, and only once `height > start_height + 22500`. The first window after bonding is a grace period. The bitmap is sliding, not consecutive hours. A jailed validator is not charged further misses. On jail the counter and the bitmap are cleared. `start_height` is set when the validator bonds, not when `create-validator` is accepted.
+
+```bash
+secretd q slashing signing-info '{"@type":"/cosmos.crypto.ed25519.PubKey","key":"EXAMPLE"}' \
+  --node https://rpc.secret.mainnet.secret3.dev
+```
+
+The autocli also accepts a consensus address. Watch `missed_blocks_counter`, `jailed_until`, and `tombstoned`.
+
+Downtime: slash 0.01%, jail for `600s` of block time, no rewards while jailed. Unjail is manual and has no positional argument:
+
+```bash
+secretd tx slashing unjail \
+  --from EXAMPLE_KEY \
+  --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 \
+  --gas-prices 0.1uscrt
+```
+
+Unjail fails if there is no self-delegation, if self-bond tokens are below `min_self_delegation`, if the validator is not jailed, if `tombstoned` is true, or if block time is still before `jailed_until`. Sync before unjail.
+
+If you undelegate and your tokens fall below `min_self_delegation`, the validator is jailed without the downtime slash fraction. Delegate back above the minimum, then `unjail`.
+
+Double sign: slash 5% of stake (including unbonding and redelegations at the infraction height), jail, `jailed_until` `253402300799` (9999-12-31), tombstone. `unjail` returns an error while `tombstoned` is true. `RevertTombstone` is not a CLI command. You cannot unjail, reuse the consensus pubkey, or `create-validator` again from the same account. Delegators move with `redelegate` (at most `max_entries` 7) or unbond and wait `1814400s`. A new validator is a new account and a new ed25519 key, on a registered node.
+
+## Rewards
+
+Not required to validate. Live distribution params: `community_tax` `0`, `secret_foundation_tax` `0`, `withdraw_addr_enabled` true, `base_proposer_reward` `0`, `bonus_proposer_reward` `0`, plus `minimum_restake_threshold` `10000000` and `restake_period` `1000`.
+
+```bash
+secretd tx distribution withdraw-rewards secretvaloper1EXAMPLE \
+  --from EXAMPLE_KEY --commission --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 --gas-prices 0.1uscrt
+```
+
+## Upgrade
+
+If you already validate, follow [Upgrade a seeded node](/operators/upgrade/v1.27.2). Run one process. Confirm `secretd version` is `1.27.2`. Do not wait for a halt before `create-validator` on a chain that is already upgraded. Do not run `unsafe-reset-all` as an upgrade step.

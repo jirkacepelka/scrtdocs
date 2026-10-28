@@ -1,0 +1,82 @@
+---
+title: "Upgrade a seeded node"
+description: "Install the 1.27.2 MAINNET deb on a secret-4 node that already has a seed. Do not register again."
+slug: "operators/upgrade/v1.27.2"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+| | |
+| --- | --- |
+| Version | 1.27.2 |
+| Release | [v1.27.2](https://github.com/Secret3dev/SecretNetwork/releases/tag/v1.27.2) |
+
+Use this when the home already has `new_seed.json` or `seed.json`.
+
+If this node signs, it must be the only signer. Stop the process before you swap the binary. SGX has to already work.
+
+The halt at height `27286266` is over. The chain is producing blocks.
+
+## Already on 1.27.2
+
+`secretd version` prints `1.27.2`. Back up the unit, install the matching MAINNET deb, put the unit back, and restart. Do not register again.
+
+```bash
+set -euo pipefail
+sudo cp -a /etc/systemd/system/secret-node.service /tmp/secret-node.service.bak
+. /etc/os-release
+case "$VERSION_ID" in
+  22.04|24.04) ;;
+  *) echo "Ubuntu 22.04 or 24.04"; exit 1 ;;
+esac
+deb="secretnetwork_1.27.2_MAINNET_goleveldb_amd64_ubuntu-${VERSION_ID}.deb"
+curl -fL -o "/tmp/$deb" \
+  "https://github.com/Secret3dev/SecretNetwork/releases/download/v1.27.2/$deb"
+case "$VERSION_ID" in
+  22.04) echo "ffcca0fe04422228ae92b0bb216808a0eafa1030a7073d1bf1ca347a0781fcbb  /tmp/$deb" ;;
+  24.04) echo "f90e7104d6308d491c9cfdb691672302b17b3364c3b355962479adc46da3d903  /tmp/$deb" ;;
+esac | sha256sum -c -
+sudo dpkg -i "/tmp/$deb"
+unit="$(systemctl show -p User --value secret-node)"
+sudo chown -R "$unit:$unit" /opt/secret /opt/secret/.sgx_secrets
+sudo find /opt/secret /opt/secret/.sgx_secrets -type d -exec chmod 750 {} \;
+sudo find /opt/secret /opt/secret/.sgx_secrets -type f -exec chmod 600 {} \;
+sudo cp -a /tmp/secret-node.service.bak /etc/systemd/system/secret-node.service
+sudo systemctl daemon-reload
+sudo systemctl restart secret-node
+secretd version
+```
+
+Install the deb with the commands and hashes on [Install secretd](/operators/install). `dpkg` replaces `/etc/systemd/system/secret-node.service` on every install. Repeat the backup on every later package install. Confirm `secretd version` prints `1.27.2`.
+
+Run one process only. Stop, swap, start. Do not run the old and new binaries together on the same consensus key.
+
+The upgrade does not rewrite `app.toml`. If you set archive pruning, check `pruning` is still `"nothing"` on [Archive node](/operators/archive). Existing bind addresses, CORS, and `api.enable` stay. Read them on [RPC and LCD](/operators/rpc-lcd) before you publish.
+
+## Still on 1.26.0
+
+Do not install this deb. That package replaces the enclave. The 1.27.2 measurement is `f0d59dd2561b1c86de88ef27b8b9146bcc2c1b02875ba3c48db48a32bb20d90b`, and the old sealed key does not open under it.
+
+`autopilot.sh` will not perform the handover. The collector state is done and the script exits with `upgrade secret-4-v1.27.2 is done.`
+
+## Warnings
+
+- Do not set `UNSAFE_SKIP_BACKUP`. Do not run `secretd tendermint unsafe-reset-all`.
+- If this machine is a validator, leave the key file and the state file. This procedure does not delete `data/` or write height `0`.
+- Do not register again. A quote from an older binary fails as `MrEnclaveMismatch` (“Registering enclave had different code signature”). A new machine uses [Register the node](/operators/register).
+- Plan `v1.27.2` runs module migrations only. That handler does not add or remove a store.
+
+## Testnet kit
+
+Do not point a 1.27.2 binary at `pulsar-3`.
+
+A node already on the upgraded testnet: `cd testnet && sudo ./install.sh`.
+
+Testnet measurement: `5b5cd3cd181938c0eb6b1321a9d05fd5d5cc0124bc25943e98f057d13527fd02`.
+
+| Asset | SHA-256 |
+| --- | --- |
+| `secretnetwork_1.27.2_TRINITY_goleveldb_amd64_ubuntu-22.04.deb` | `5ce31f1be3350b8d5d8757eec8c068adfc1b2e34c9aeaf6d8a3ff1eb9e252a1a` |
+| `secretnetwork_1.27.2_TRINITY_goleveldb_amd64_ubuntu-24.04.deb` | `de19050e32b7704b463876fa085289ca05c26fcdcb60711d8ef0249d78b05eeb` |
+
+After a seeded mainnet upgrade, use the health checks on [Sync](/operators/full-node).

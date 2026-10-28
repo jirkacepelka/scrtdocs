@@ -1,0 +1,16 @@
+---
+title: "Requirements"
+description: "Ubuntu, memory, storage, and Intel SGX with DCAP for a secret-4 node on 1.27.2."
+slug: "operators/requirements"
+updated: 2026-10-06
+updatedNote: "v1.27.2 notes"
+---
+
+You need a physical host, or an Azure DCsv3 or DCdsv3 VM, that meets these limits before you run [Quick Setup](/) or the Manual path.
+
+- Ubuntu 22.04 or 24.04.
+- 32 GB RAM minimum, 20 GB or more of swap. 64 GB RAM recommended.
+- 512 GB SSD minimum. 1 TB NVMe recommended.
+- Intel CPU with SGX through SPS. SGX through Intel ME does not work. AMD does not work.
+- The machine must expose `/dev/sgx_enclave` and `/dev/sgx_provision`. The setup script already stops if those are missing.
+- On a physical host, BIOS must expose SGX and DCAP. On Azure DCsv3 or DCdsv3, pick a Gen2 image. See [Boards](/operators/boards) for verified motherboards.

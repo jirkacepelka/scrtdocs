@@ -1,0 +1,29 @@
+---
+title: "Builder journey"
+description: "To put a site on Secret Zone, you claim a name and connect a git repository, along with the command that builds it and the folder it outputs."
+slug: "secret-zone/builder-journey"
+updated: 2026-10-28
+---
+
+:::note[Details pending]
+:::
+
+<p>{"To put a site on Secret Zone, you claim a name and connect a git repository, along with the command that builds it and the folder it outputs."}</p>
+
+<p>{"Every push to the repository starts a build. The Scheduler queues it, and a Builder runs your command on a confidential computer. The files go to your site, and a receipt and build log go to your account."}</p>
+
+<p>{"Every build gets its own preview address, "}<code>{"name--branch--build.secret.express"}</code>{". The two newest builds on each of up to three branches stay available as previews."}</p>
+
+<p>{"Your site goes live at "}<code>{"name.secret.express"}</code>{" when you pick which build to publish. A build never publishes itself."}</p>
+
+<p>{"You can add your own domain by following the DNS steps your account shows. Until that domain reaches the edge and has its certificate, the site keeps serving at "}<code>{"name.secret.express"}</code>{". After that, the "}<code>{"secret.express"}</code>{" address sends visitors to your domain."}</p>
+
+<Flowchart
+  label="The Scheduler queues it, and a Builder runs your command. The files go to your site, and a receipt and build log go to your account."
+  chart={`flowchart TD
+  Repo[git repository] -->|push| Edge[Edge]
+  Edge --> Scheduler[Scheduler]
+  Scheduler --> Builder[Builder]
+  Builder -->|files| Site[your site]
+  Builder -->|receipt and build log| Account[your account]`}
+/>

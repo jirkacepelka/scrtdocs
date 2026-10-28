@@ -1,0 +1,114 @@
+---
+title: "Create the node home"
+description: "Init a secret-4 home and set p2p.seeds before registration and snapshot restore."
+slug: "operators/home"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+Run this after [Install secretd](/operators/install) and before `init-enclave`. Run the commands as the unit `User=`.
+
+Do not re-init a home that already exists. [Upgrade a seeded node](/operators/upgrade/v1.27.2) leaves `config.toml` and `genesis.json` in place.
+
+## Init
+
+`secretd init` writes `config/config.toml`, `config/app.toml`, and a placeholder `config/genesis.json`. It creates `config/node_key.json` and `config/priv_validator_key.json`. Keep `priv_validator_key.json`. You need it before `init-enclave`. Do not generate a second consensus key after the quote.
+
+```bash
+secretd init <MONIKER> --chain-id secret-4
+```
+
+If `genesis.json` already exists, `init` refuses unless you pass `--overwrite`. Do not pass `--overwrite`. `--overwrite` replaces `genesis.json` with a new placeholder. An existing `priv_validator_key.json` stays. The placeholder stays until Sync runs `restore.sh`.
+
+After `init`, replace `p2p.seeds`. For chain-id `secret-4`, the installed binary writes three peers on `scrt-seed-01.scrtlabs.com`, `scrt-seed-02.scrtlabs.com`, and `scrt-seed-03.scrtlabs.com`. Replace that line with the seven peers below. A home that already ran `init` keeps the old `config.toml` until you edit that line.
+
+| Node | Peer |
+| --- | --- |
+| snapshot-node | `d047c7c0431e13ef914a928f4d738870c3de932d@162.251.234.169:26656` |
+| s2-g00 | `9c530e33a6737efb14c5dc4c087188815375ed5f@162.251.234.143:26656` |
+| spare-00 | `08a1f831254bf6198a6535011ffccbefbbcf240b@162.251.234.170:26656` |
+| spare-01 | `d3827d7a908ffc87b62a72ee2706e3d4082ababe@162.251.234.171:26656` |
+| spare-02 | `7fb7e3751a3aff1d70c03fa1aa19b78cb12525a5@162.251.234.172:26656` |
+| archive-00 | `3f5ade9acf08c1dd93451e27729926645d6722e2@162.251.234.131:26656` |
+| archive-01 | `ad039e1610dbfd507b4e91003b7c8ff1b6670e92@162.251.234.132:26656` |
+
+```toml
+seeds = "d047c7c0431e13ef914a928f4d738870c3de932d@162.251.234.169:26656,9c530e33a6737efb14c5dc4c087188815375ed5f@162.251.234.143:26656,08a1f831254bf6198a6535011ffccbefbbcf240b@162.251.234.170:26656,d3827d7a908ffc87b62a72ee2706e3d4082ababe@162.251.234.171:26656,7fb7e3751a3aff1d70c03fa1aa19b78cb12525a5@162.251.234.172:26656,3f5ade9acf08c1dd93451e27729926645d6722e2@162.251.234.131:26656,ad039e1610dbfd507b4e91003b7c8ff1b6670e92@162.251.234.132:26656"
+```
+
+That line is `p2p.seeds`. A seed is dialed for addresses and then dropped. Leave `p2p.persistent_peers` empty.
+
+`init` also sets:
+
+| Key | Value `init` writes | Comet default it replaces |
+| --- | --- | --- |
+| `p2p.max_num_inbound_peers` | `320` | `40` |
+| `p2p.max_num_outbound_peers` | `40` | `10` |
+| `mempool.size` | `10000` | `5000` |
+| `block_sync.version` | `v0` | `v0` |
+
+Leave `p2p.persistent_peers` as `""`, `db_backend` as `goleveldb`, `p2p.laddr` as `tcp://0.0.0.0:26656`, and `rpc.laddr` as `tcp://127.0.0.1:26657`. Keep RPC on loopback until you follow [RPC and LCD](/operators/rpc-lcd).
+
+## Persistent peers
+
+```toml
+persistent_peers = ""
+```
+
+Leave `persistent_peers` empty until you have peers to add.
+
+## Genesis
+
+`secretd init` leaves a placeholder `~/.secretd/config/genesis.json`. The chain genesis is about 1.36 GiB and ships inside the pruned snapshot tarball on `https://mainnet-secret-snapshot.secret3.dev`.
+
+Do not replace that file by hand. Do not pull genesis from the RPC.
+
+After [Register the node](/operators/register), run `restore.sh` from [Sync](/operators/full-node). It downloads the snapshot and copies `genesis.json` and `addrbook.json` into `config/` while keeping your node keys and `config.toml`. Quick Setup runs the same restore at the end.
+
+## app.toml
+
+`secretd init` already wrote `app.toml`. Edit that file before start. Do not run `secretd start` to create it. The 1.27.2 binary writes `minimum-gas-prices = "0.0125uscrt"`. Set it to `0.1uscrt` before you start the node:
+
+```toml
+minimum-gas-prices = "0.1uscrt"
+```
+
+In that same root table, set `iavl-disable-fastnode = true`. The fresh value is `false`, which turns the IAVL fastnode index on. The first start then builds that index. Keep the key above the first `[section]`. The same line under `[wasm]` is ignored.
+
+Confirm a fresh file also shows:
+
+| Key | Value |
+| --- | --- |
+| `iavl-disable-fastnode` | `false` |
+| `api.enable` | `true` |
+| `api.swagger` | `true` |
+| `api.enabled-unsafe-cors` | `true` |
+| `grpc.concurrency` | `false` |
+| `grpc-web.enable` | `true` |
+| `wasm.contract-query-gas-limit` | `10000000` |
+| `wasm.contract-memory-cache-size` | `0` |
+| `wasm.contract-memory-enclave-cache-size` | `200` |
+| `wasm.store-sgx-data` | `false` |
+
+A new home uses `pruning = "default"` (last `362880` states, delete every 10) and `min-retain-blocks = 0`. Set `pruning = "nothing"` on [Archive node](/operators/archive) before the heights you need are committed. Do not leave `minimum-gas-prices` empty. Startup halts if it is empty; at `0.0125uscrt` the node starts with the package default until you change it.
+
+`api.address` is `tcp://localhost:1317` and `grpc.address` is `localhost:9090`. Do not publish `1317` or `9090` yet. A fresh file sets `enabled-unsafe-cors = true`. Turn that off in [RPC and LCD](/operators/rpc-lcd) before the API is reachable.
+
+## Ports and paths
+
+| Item | Value |
+| --- | --- |
+| Chain-id | `secret-4` |
+| Bech32 prefix | `secret` |
+| Fee denom | `uscrt` |
+| Node home | `~/.secretd` of the unit `User` |
+| Enclave dir | `SCRT_ENCLAVE_DIR=/usr/lib` |
+| SGX storage | `/opt/secret/.sgx_secrets` unless `SCRT_SGX_STORAGE` is set |
+| P2P | `tcp://0.0.0.0:26656` |
+| RPC | `tcp://127.0.0.1:26657` |
+| ABCI proxy | `tcp://127.0.0.1:26658` |
+| Prometheus | `:26660`, `prometheus = false` |
+
+Create a custom `SCRT_SGX_STORAGE` directory yourself before `init-enclave`. The command does not create a missing custom path. The package creates `/opt/secret/.sgx_secrets`.
+
+Next: [Register the node](/operators/register). `priv_validator_key.json` must already be on disk.

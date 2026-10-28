@@ -1,0 +1,107 @@
+---
+title: "Allowlist and machine replacement"
+description: "Put the machine id on the enclave allowlist, including on Azure."
+slug: "operators/allowlist"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+Use this when `check-hw` succeeded and `tx register auth` failed the allowlist, or when you are moving a machine id that is already bound to your consensus key.
+
+Take the machine id from `check-hw` (40 hex characters). To replace a machine, the old id must already be on the list and bound to the consensus key that the new quote will carry. Hardware is on [SGX prerequisites](/operators/sgx).
+
+Every platform, including Azure, needs the machine id on the enclave allowlist.
+
+## Add a new id
+
+Do this before the first successful `tx register auth`. `check-hw` does not add the id. The enclave boots with a compiled-in allowlist. Governance can add ids after that.
+
+Write `whitelist-proposal.json` with exactly one message. Put your validator moniker, alias, team, or company in `title` and `summary`, not the machine id. Replace WhisperNode with the name people already know you by. If you are whitelisting a full node, say full node instead of validator in the summary.
+
+```json
+{
+  "messages": [
+    {
+      "@type": "/secret.compute.v1beta1.MsgUpdateMachineWhitelistProposal",
+      "authority": "secret10d07y265gmmuvt4z0w9aw880jnsr700jc88vt0",
+      "title": "Add machine id for WhisperNode",
+      "description": "Whitelist Machine ID <40 hex chars, no 0x> so WhisperNode can register a validator on secret-4.",
+      "machine_id": "<40 hex chars, no 0x>"
+    }
+  ],
+  "metadata": "",
+  "deposit": "5000000000uscrt",
+  "title": "Add machine id for WhisperNode",
+  "summary": "Whitelist Machine ID <40 hex chars, no 0x> so WhisperNode can register a validator on secret-4.",
+  "expedited": false
+}
+```
+
+Expedited is the same file with `"deposit": "12500000000uscrt"` and `"expedited": true`. Voting runs 7 days on a normal proposal and 1 day on an expedited one. Quorum is 0.334 and the veto threshold is 0.334. The pass threshold is 0.5 for normal and 0.667 for expedited.
+
+Submit the file:
+
+```bash
+secretd tx gov submit-proposal whitelist-proposal.json \
+  --from KEY --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 --gas-prices 0.1uscrt
+```
+
+`700000` is the same gas ceiling used for [Register the node](/operators/register). It is not a measured cost for this message.
+
+- `authority` stays `secret10d07y265gmmuvt4z0w9aw880jnsr700jc88vt0`. Leave `metadata` empty. The outer `title` and `summary` match the message `title` and `description`.
+- `machine_id` is one string: the 40 hex characters `check-hw` prints, with no `0x`. Several ids are that string separated by commas and no spaces.
+- The deposit that opens voting on a normal proposal is `5000000000uscrt` (5000 SCRT). The initial-deposit ratio is 0, so a smaller first deposit keeps the proposal in the deposit period until the minimum is met. Any later deposit has to be at least `50000000uscrt` (50 SCRT).
+
+The proposal id is in the submit response. While the total is under `5000000000uscrt`, the proposal stays in the deposit period for 7 days. Add the shortfall with a new transaction. The amount is only what you are adding now, in `uscrt`, and that amount has to be at least `50000000uscrt` (50 SCRT). If the gap is smaller than 50 SCRT, send 50 SCRT. An expedited proposal uses the same command with a minimum of `125000000uscrt` (125 SCRT).
+
+```bash
+secretd tx gov deposit <proposal-id> <amount>uscrt \
+  --from KEY --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 --gas-prices 0.1uscrt
+```
+
+`700000` is the same gas ceiling as submit. It is not a measured cost for this message.
+
+Check the total on secretnodes.com before you send it. Open [https://secretnodes.com/governance](https://secretnodes.com/governance) and select Deposit. The card reads Needs deposit · `<already on the proposal>` / 5,000 SCRT min. Open that card. The address is `https://secretnodes.com/governance/<proposal-id>`. Deposits is the total from every depositor. Deposit end is the deadline. Show depositors lists each address and the amount that address has put in. Your row is the running total for your key, because a second deposit from the same key adds to that row. Send `<amount>uscrt` equal to 5000 SCRT minus the Deposits figure, unless that gap is under 50 SCRT. When Deposits is at least 5,000 SCRT, the card leaves Deposit and the proposal is in voting. Do not send another deposit to reach the allowlist step.
+
+If the total is still short when Deposit end passes, the proposal does not enter voting and the deposit is returned. `min_initial_deposit_ratio` is 0. A later deposit on a normal proposal must be at least 50 SCRT. On an expedited proposal that floor is 125 SCRT.
+
+- Passing the proposal does not write the allowlist. That handler checks the authority and emits an event. After status `PROPOSAL_STATUS_PASSED`, run `update-machine-whitelist` below with the same `machine_id` string as the second argument. One message only. A second message in the file makes that follow-up fail.
+
+After status `PROPOSAL_STATUS_PASSED`, send a second transaction. Pass two arguments. `machine_ids` must equal the proposal string exactly.
+
+```bash
+secretd tx compute update-machine-whitelist <proposal-id> <machine_ids> \
+  --from KEY --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 --gas-prices 0.1uscrt
+```
+
+The transaction fails if the proposal is not passed, does not contain exactly one message, or has the wrong type URL. On success the id is added.
+
+Do not use `--replace-machine-id` for an id that has never been on the list.
+
+## Replace a listed machine
+
+Stop the old process first. See [Validator](/operators/validator). Copy `config/priv_validator_key.json` from the old home to the new home before `init-enclave`, so the new quote’s owner field is that same key. Then run `init-enclave`, then:
+
+```bash
+secretd tx register auth /opt/secret/.sgx_secrets/attestation_combined.bin \
+  --replace-machine-id <40 hex chars of the old machine id> \
+  --from KEY --chain-id secret-4 \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 --gas-prices 0.1uscrt
+```
+
+Pass 40 hex characters. Anything else is treated as no replacement. The swap succeeds only when the old id is on the list, its stored owner equals this quote’s validator key, and the new id is not already present. Failures log `Failed to replace MachineID - machine … not owned by validator key …`, `unknown machine`, or `machine … already exists`, and the transaction is `InvalidCert`. The allowlist key is the quote’s PPID hash. `--replace-machine-id` is only the id you are removing. After a successful replace the old machine logs `Self machine included: false`.
+
+## Id already listed on this machine
+
+Register with no `--replace-machine-id` to bind this machine to your validator key. An unknown machine fails with `unknown machine`. Produce the quote and seed on [Register the node](/operators/register).
+
+## Upgrade
+
+Replacing the deb on a machine that is already registered does not add or remove an id. A hardware change that changes the PPID does. Follow the replace steps above.

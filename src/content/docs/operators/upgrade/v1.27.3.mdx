@@ -1,0 +1,235 @@
+---
+title: "Upgrade to 1.27.3"
+description: "Install the 1.27.3 package after the chain reaches the halt height. The signed enclave does not change. Do not register again."
+slug: "operators/upgrade/v1.27.3"
+updated: 2026-10-28
+updatedNote: "v1.27.2 notes"
+---
+
+| | |
+| --- | --- |
+| Version | 1.27.3 |
+| Scheduled | 9:00 America/New_York on 13 October 2026 (13:00 UTC) |
+| Proposal | [381](https://secretnodes.com/governance/381) |
+| Release | [v1.27.3](https://github.com/Secret3dev/SecretNetwork/releases/tag/v1.27.3) |
+| Halt height | 27595508 |
+| Mainnet measurement | `f0d59dd2561b1c86de88ef27b8b9146bcc2c1b02875ba3c48db48a32bb20d90b` |
+| Mainnet deb SHA-256, Ubuntu 22.04 | `07110981e133a0af37dd5bc191f985bf6e9dd318fa645970c84ce3cf928f86e5` |
+| Mainnet deb SHA-256, Ubuntu 24.04 | `fdfbd52d792aafffd947660903c8218adc1ee6cafd76ce4bb4b04914ce36c3a2` |
+| Testnet measurement | `5b5cd3cd181938c0eb6b1321a9d05fd5d5cc0124bc25943e98f057d13527fd02` |
+| Testnet deb SHA-256, Ubuntu 22.04 | `594e521b307aeec6459b4e8c741c94c3555c53b227474f9ae458dd76945ec6bc` |
+| Testnet deb SHA-256, Ubuntu 24.04 | `2260de7650380636aea149cada882d41b59a08b13f2ad4822df83e80863b6de1` |
+
+Scheduled for 9:00 America/New_York on 13 October 2026 (13:00 UTC). The chain halts at height `27595508` for plan `v1.27.3`. Do not install before that height.
+
+Host binary only. The signed enclave does not change. Do not register again.
+
+Use this when the home already has `new_seed.json` or `seed.json`. If this node signs, it must be the only signer. Stop the process before the swap. SGX has to already work.
+
+## Install
+
+Two ways. Same files. Same order. Do not start until the node has halted at `27595508`.
+
+`secretd version` prints `1.27.2` before the halt and `1.27.3` after the restart.
+
+### By hand
+
+1. Wait for the halt. The `secret-node` journal contains `UPGRADE "v1.27.3" NEEDED`. A node still below `27595508` stays on 1.27.2.
+
+2. Pick the one file for this machine. `secret-4` uses `MAINNET`. `trinity-b` uses `TRINITY`. Ubuntu comes from `/etc/os-release` (`22.04` or `24.04`). The other three files are wrong for this machine.
+
+| Machine | File | SHA-256 |
+| --- | --- | --- |
+| secret-4, Ubuntu 22.04 | `secretnetwork_1.27.3_MAINNET_goleveldb_amd64_ubuntu-22.04.deb` | `07110981e133a0af37dd5bc191f985bf6e9dd318fa645970c84ce3cf928f86e5` |
+| secret-4, Ubuntu 24.04 | `secretnetwork_1.27.3_MAINNET_goleveldb_amd64_ubuntu-24.04.deb` | `fdfbd52d792aafffd947660903c8218adc1ee6cafd76ce4bb4b04914ce36c3a2` |
+| trinity-b, Ubuntu 22.04 | `secretnetwork_1.27.3_TRINITY_goleveldb_amd64_ubuntu-22.04.deb` | `594e521b307aeec6459b4e8c741c94c3555c53b227474f9ae458dd76945ec6bc` |
+| trinity-b, Ubuntu 24.04 | `secretnetwork_1.27.3_TRINITY_goleveldb_amd64_ubuntu-24.04.deb` | `2260de7650380636aea149cada882d41b59a08b13f2ad4822df83e80863b6de1` |
+
+3. Download that file from the [v1.27.3 release](https://github.com/Secret3dev/SecretNetwork/releases/tag/v1.27.3) and check the hash. This example is secret-4. For trinity-b, change the file name and the hash to the matching row.
+
+```bash
+set -euo pipefail
+. /etc/os-release
+case "${VERSION_ID:-}" in
+  22.04)
+    deb=secretnetwork_1.27.3_MAINNET_goleveldb_amd64_ubuntu-22.04.deb
+    hash=07110981e133a0af37dd5bc191f985bf6e9dd318fa645970c84ce3cf928f86e5
+    ;;
+  24.04)
+    deb=secretnetwork_1.27.3_MAINNET_goleveldb_amd64_ubuntu-24.04.deb
+    hash=fdfbd52d792aafffd947660903c8218adc1ee6cafd76ce4bb4b04914ce36c3a2
+    ;;
+  *) echo "Ubuntu 22.04 or 24.04"; exit 1 ;;
+esac
+curl -fL -o "/tmp/$deb" \
+  "https://github.com/Secret3dev/SecretNetwork/releases/download/v1.27.3/$deb"
+echo "$hash  /tmp/$deb" | sha256sum -c -
+```
+
+`sha256sum` must print `OK`.
+
+4. As root, stop, install, and start. `dpkg` replaces `/etc/systemd/system/secret-node.service` with the stock unit. Save that file yourself first if you changed it.
+
+```bash
+sudo systemctl stop secret-node
+sudo dpkg -i "/tmp/$deb"
+sudo systemctl daemon-reload
+sudo systemctl restart secret-node
+secretd version
+```
+
+`secretd version` must print `1.27.3`. Do not register again.
+
+### Script
+
+Save this and run it as root: `sudo bash upgrade.sh`. It picks the file from the chain id and Ubuntu version, and it exits if the halt height has not been reached.
+
+```bash
+#!/bin/bash
+# Secret Network v1.27.3 host install.
+# Run as root, on the node, after the upgrade height.
+set -euo pipefail
+
+PLAN_NAME=v1.27.3
+PLAN_HEIGHT=27595508
+BASE=https://github.com/Secret3dev/SecretNetwork/releases/download/v1.27.3
+
+SHA_MAINNET_2204=07110981e133a0af37dd5bc191f985bf6e9dd318fa645970c84ce3cf928f86e5
+SHA_MAINNET_2404=fdfbd52d792aafffd947660903c8218adc1ee6cafd76ce4bb4b04914ce36c3a2
+SHA_TRINITY_2204=594e521b307aeec6459b4e8c741c94c3555c53b227474f9ae458dd76945ec6bc
+SHA_TRINITY_2404=2260de7650380636aea149cada882d41b59a08b13f2ad4822df83e80863b6de1
+
+die() { echo "stop: $*" >&2; exit 1; }
+
+[ "$(id -u)" -eq 0 ] || die "run as root"
+case "$PLAN_HEIGHT" in
+  ''|*[!0-9]*) die "halt height is not set" ;;
+esac
+
+. /etc/os-release
+case "${VERSION_ID:-}" in
+  22.04|24.04) ;;
+  *) die "need Ubuntu 22.04 or 24.04" ;;
+esac
+
+genesis=""
+for f in "$HOME/.secretd/config/genesis.json" /root/.secretd/config/genesis.json /opt/secret/.secretd/config/genesis.json; do
+  if [ -f "$f" ]; then
+    genesis=$f
+    break
+  fi
+done
+[ -n "$genesis" ] || die "genesis.json not found"
+chain="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("chain_id",""))' "$genesis")"
+case "$chain" in
+  secret-4) net=MAINNET ;;
+  trinity-b) net=TRINITY ;;
+  *) die "chain id ${chain:-missing} is not secret-4 or trinity-b" ;;
+esac
+
+case "${net}_${VERSION_ID}" in
+  MAINNET_22.04) want="$SHA_MAINNET_2204" ;;
+  MAINNET_24.04) want="$SHA_MAINNET_2404" ;;
+  TRINITY_22.04) want="$SHA_TRINITY_2204" ;;
+  TRINITY_24.04) want="$SHA_TRINITY_2404" ;;
+esac
+
+if systemctl show -p ExecStart --value secret-node 2>/dev/null | grep -q -- '--unsafe-skip-upgrades'; then
+  die "secret-node.service contains --unsafe-skip-upgrades"
+fi
+
+height=""
+if curl -fsS --max-time 5 http://127.0.0.1:26657/status -o /tmp/v1273-status.json; then
+  height="$(python3 -c 'import json; d=json.load(open("/tmp/v1273-status.json")); print((d.get("result") or d).get("sync_info",{}).get("latest_block_height",""))')"
+fi
+rm -f /tmp/v1273-status.json
+
+info_name=""
+info_height=""
+for f in "$HOME/.secretd/data/upgrade-info.json" /root/.secretd/data/upgrade-info.json /opt/secret/.secretd/data/upgrade-info.json; do
+  [ -f "$f" ] || continue
+  parsed="$(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+p=d.get("plan") or d
+print((p.get("name") or d.get("name") or ""), (p.get("height") or d.get("height") or ""))' "$f")"
+  info_name="${parsed%% *}"
+  info_height="${parsed##* }"
+  [ -n "$info_height" ] && break
+done
+
+halted=0
+if journalctl -u secret-node -n 400 --no-pager 2>/dev/null | grep -F "UPGRADE \"${PLAN_NAME}\" NEEDED" >/dev/null; then
+  halted=1
+fi
+
+if [ -n "$height" ]; then
+  [ "$height" -ge "$PLAN_HEIGHT" ] || die "height ${height} is before ${PLAN_HEIGHT}. Do not install yet."
+else
+  [ "$halted" -eq 1 ] || die "local RPC is down and secret-node has not halted for ${PLAN_NAME}"
+  [ "$info_name" = "$PLAN_NAME" ] || die "upgrade-info name is ${info_name:-missing}"
+  [ "$info_height" = "$PLAN_HEIGHT" ] || die "upgrade-info height ${info_height:-missing} is not ${PLAN_HEIGHT}"
+fi
+
+deb="secretnetwork_1.27.3_${net}_goleveldb_amd64_ubuntu-${VERSION_ID}.deb"
+tmp="/tmp/${deb}"
+curl -fL -o "$tmp" "${BASE}/${deb}"
+echo "${want}  ${tmp}" | sha256sum -c -
+
+unit=/etc/systemd/system/secret-node.service
+if [ -f "$unit" ]; then
+  cp -a "$unit" /tmp/secret-node.service.bak
+fi
+if systemctl is-active --quiet secret-node; then
+  systemctl stop secret-node
+fi
+
+dpkg -i "$tmp"
+
+if [ -f /tmp/secret-node.service.bak ]; then
+  cp -a /tmp/secret-node.service.bak "$unit"
+fi
+systemctl daemon-reload
+systemctl restart secret-node
+
+ver="$(secretd version 2>&1 || true)"
+printf '%s\n' "$ver"
+case "$ver" in
+  *1.27.3*) ;;
+  *) die "secretd version is not 1.27.3" ;;
+esac
+echo "installed ${deb}"
+echo "do not register again"
+```
+
+`dpkg` replaces `/etc/systemd/system/secret-node.service` on every install. The script saves that file and puts it back before restart. By hand, save it yourself if you changed it.
+
+Run one process only. Stop, swap, start. Do not run the old and new binaries together on the same consensus key.
+
+The upgrade does not rewrite `app.toml`. If you set archive pruning, check `pruning` is still `"nothing"` on [Archive node](/operators/archive). Existing bind addresses, CORS, and `api.enable` stay. Read them on [RPC and LCD](/operators/rpc-lcd) before you publish.
+
+## Still on 1.26.0
+
+Do not install this package for that move. A node still on 1.26.0 uses [Upgrade a seeded node](/operators/upgrade/v1.27.2/).
+
+## Warnings
+
+- Do not set `UNSAFE_SKIP_BACKUP`. Do not run `secretd tendermint unsafe-reset-all`.
+- If this machine is a validator, leave the key file and the state file. This procedure does not delete `data/` or write height `0`.
+- Do not register again. A new machine uses [Register the node](/operators/register).
+- Plan `v1.27.3` runs module migrations only. The handler does not add or remove a store.
+- `MAINNET` and `TRINITY` packages are not interchangeable. Ubuntu 22.04 and 24.04 packages are not interchangeable.
+- Do not use `--unsafe-skip-upgrades`.
+- Cosmovisor auto-download is not supported. Keep `DAEMON_ALLOW_DOWNLOAD_BINARIES=false`.
+
+## Testnet
+
+Do not point a 1.27.3 binary at `pulsar-3`.
+
+Testnet measurement: `5b5cd3cd181938c0eb6b1321a9d05fd5d5cc0124bc25943e98f057d13527fd02`.
+
+| Asset | SHA-256 |
+| --- | --- |
+| `secretnetwork_1.27.3_TRINITY_goleveldb_amd64_ubuntu-22.04.deb` | `594e521b307aeec6459b4e8c741c94c3555c53b227474f9ae458dd76945ec6bc` |
+| `secretnetwork_1.27.3_TRINITY_goleveldb_amd64_ubuntu-24.04.deb` | `2260de7650380636aea149cada882d41b59a08b13f2ad4822df83e80863b6de1` |
+
+After a seeded mainnet upgrade, use the health checks on [Sync](/operators/full-node).

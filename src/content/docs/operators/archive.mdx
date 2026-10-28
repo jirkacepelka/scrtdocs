@@ -1,0 +1,76 @@
+---
+title: "Archive node"
+description: "Set pruning to nothing before the heights you need are committed."
+slug: "operators/archive"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+Use the same host, home, and registration as [Sync](/operators/full-node). The oldest height you must query has to still be on disk. Install the v1.27.2 `MAINNET` deb. A pruned join is [Sync](/operators/full-node).
+
+Set two keys in `~/.secretd/config/app.toml` before the process starts. The unit is `ExecStart=/usr/local/bin/secretd start` with no pruning flag.
+
+- `pruning = "nothing"` keeps every IAVL version.
+- `min-retain-blocks = 0` tells Comet not to drop blocks. It does not keep IAVL versions. It is also the default. A default full node can serve an old block and still fail the state query.
+
+| Key | Archive value | What it does |
+| --- | --- | --- |
+| `pruning` | `"nothing"` | Keep every IAVL version. |
+| `min-retain-blocks` | `0` | Do not prune Comet blocks. Also the SDK default. |
+
+Use `pruning-keep-recent` and `pruning-interval` only when `pruning = "custom"`. Do not use `custom` to keep everything: `pruning-interval` must be at least `10` and must not be `0`, and `pruning-keep-recent` must be at least `2`. An unknown `pruning` string is an error at start. There is no `pruning-keep-every`. Use the keys in the table above.
+
+| `pruning` | Versions kept | Delete cadence |
+| --- | --- | --- |
+| `default` | last `362880` | every 10 heights |
+| `nothing` | all | never |
+| `everything` | current plus previous (`KeepRecent = 2`) | every 10 heights |
+| `custom` | last `pruning-keep-recent` | every `pruning-interval` heights |
+
+`default` keeps the last `362880` versions, about 3.5 weeks if blocks are 6 seconds.
+
+These keys are not the archive switch:
+
+- Leave `[tx_index] indexer` at `"kv"`. `"null"` does not serve tx search.
+- Leave `[storage] discard_abci_responses` at `false`. `true` drops the responses `/block_results` and event reindex need.
+- Leave `[wasm] store-sgx-data` at `false` unless you want ecall and execution traces. It is not IAVL history. Turning it on later does not recreate records for heights already passed. `pruning = "nothing"` keeps ciphertext. It does not decrypt it. A historical secret-contract query still needs a registered enclave.
+
+Do not start mainnet with `scripts/start-node.sh`. That script passes `--pruning=nothing` and `SGX_MODE=SW`.
+
+## When you need it
+
+Set `pruning = "nothing"` before you serve an ABCI, LCD, or gRPC query at an old height with header `x-cosmos-block-height`. If the version is gone, `GetImmutable` returns `version does not exist. Version has either been pruned, or is for a future block height`. A latest-height query, a `/block` for a height still in the blockstore, `/tx` when the index exists, and `/block_results` when ABCI responses were kept do not need `pruning = "nothing"` by themselves. Staking `historical_entries` `10000` is a ring in module state. It does not replace an old IAVL version.
+
+Do not use the release RPC as an archive.
+
+## Do not expect deleted heights to come back
+
+Once versions are deleted, they stay deleted. Switching a live node to `nothing` keeps versions still on disk and every version committed after the restart. It does not rebuild deleted versions. The switch also does not bring back blocks you never downloaded, blocks already pruned because `min-retain-blocks` was non-zero, ABCI responses discarded while `discard_abci_responses = true`, tx index entries never written or deleted with `data/`, ecall records for heights where `store-sgx-data` was false, or any height the pruned tarball never contained. A pruned-snapshot join starts at the snapshot height.
+
+## Steps
+
+1. Pick the oldest height that must stay queryable.
+2. If that height is below the published snapshot, do not start from the Secret³ tarball. Replay from the first height in range.
+3. Before the first commit under a pruning strategy, set `app.toml`:
+
+```toml
+pruning = "nothing"
+min-retain-blocks = 0
+```
+
+Leave `pruning-keep-recent` and `pruning-interval` unused. Leave `indexer = "kv"` and `discard_abci_responses = false` if `/tx` and `/block_results` matter. Set `store-sgx-data = true` only if the ecall and trace methods must be stored.
+
+4. Replay from the first height in range.
+5. Install the `MAINNET` deb. `dpkg` replaces the systemd unit, not `app.toml`. After that install, check `pruning` is still `"nothing"`. See [Upgrade a seeded node](/operators/upgrade/v1.27.2).
+6. Restart `secret-node`. Query a height older than 362880 blocks, using a height the blockstore actually has.
+7. To stop archiving, set `pruning` to `"default"` or `"everything"` and restart. Deleted versions do not come back. To prune blocks as well, set `min-retain-blocks` to a non-zero offset and restart.
+
+## Disk
+
+`pruning = "nothing"` grows for the life of the node. Plan disk for that growth.
+
+Set the keys before the first commit of the range. On a node that has been pruning, the switch only protects what is still on disk and what comes next. A binary upgrade does not change `pruning`.
+
+`store-sgx-data` does not rebuild IAVL history. A machine without SGX cannot serve encrypted queries.
+
+To publish the API, follow [RPC and LCD](/operators/rpc-lcd). Keep Prometheus off, or bind it to `127.0.0.1:26660`.

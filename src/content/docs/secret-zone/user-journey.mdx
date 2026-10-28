@@ -1,0 +1,30 @@
+---
+title: "User journey"
+description: "You sign up for Secret Zone with an email and a password. Your browser proves you know the password without sending it, and the login is sealed to Accounts before it reaches the edge, so the edge can't read it."
+slug: "secret-zone/user-journey"
+updated: 2026-10-28
+---
+
+:::note[Details pending]
+:::
+
+<p>{"You sign up for Secret Zone with an email and a password. Your browser proves you know the password without sending it, and the login is sealed to Accounts before it reaches the edge, so the edge can't read it."}</p>
+
+<p>{"When you sign in, your browser gets a sign-in permit that lasts one hour, and each program checks it on every request. You can add a passkey to sign in without your password and link a wallet to your account. If you forget your password, your linked wallet lets you set a new one. Without the wallet, a code sent to your email does."}</p>
+
+<p>{"Secret Money uses your chain wallet as its account, so there's no sign-up, and your account key stays in your wallet. To see your balance, your wallet signs a viewing permit, which your browser keeps for one hour."}</p>
+
+<p>{"Moving coins into Secret Money is a public chain transaction that locks them, and Secret Money credits you once it verifies that lock against the chain. Moving coins out is also a public chain transaction."}</p>
+
+<p>{"When you send Secret Money, your wallet seals the transfer to Secret Money before it reaches the edge, so the edge passes it on without reading it. The payment shows as pending until Secret Money's next chain checkpoint covers it, then as sent."}</p>
+
+<p>{"Secret Wallet is the app for holding and sending Secret Money. Secret Market will be a confidential exchange built on Secret Money."}</p>
+
+<Flowchart
+  label="your wallet seals the transfer to Secret Money before it reaches the edge"
+  chart={`flowchart TD
+  Browser[Browser] --> Edge[Edge]
+  Wallet[Wallet] --> Edge
+  Edge --> Accounts[Accounts]
+  Edge --> Money[Secret Money]`}
+/>

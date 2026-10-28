@@ -1,0 +1,156 @@
+---
+title: "SGX prerequisites"
+description: "Confirm Intel SGX with FLC and DCAP on Ubuntu 22.04 or 24.04 before you start secretd."
+slug: "operators/sgx"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+:::caution
+Do not treat `Platform Okay!` as success. `check-hw` does not put the machine on the allowlist. An Azure attestation JWT does not authorize registration.
+:::
+
+Confirm all four before you register:
+
+1. `/proc/cpuinfo` flags include `sgx` and `sgx_lc`.
+2. `/dev/sgx_enclave` and `/dev/sgx_provision` exist, and your user can open both.
+3. `aesmd` is running and the quote provider can fetch collateral.
+4. `check-hw`, loaded with the v1.27.2 mainnet enclave, prints `DCAP attestation obtained and verified ok` and `Platform verification successful! You are able to run a mainnet Secret node`, then `Your machine ID:`.
+
+## Pick the machine
+
+Use Intel SGX with FLC on Ubuntu 22.04 or 24.04, the in-kernel driver, and `/etc/sgx_default_qcnl.conf` for DCAP collateral.
+
+- CPU families: Xeon E-23xxG, Xeon D-1700, D-2700, D-1800, D-2800, Xeon Max, Xeon Scalable 3rd, 4th, and 5th gen.
+- Motherboards: Supermicro X11SCM-F, X11SCW-F, X11SCZ-F, X11SSL-F; Dell R240 (BIOS 2.14.1) and R350 (BIOS 1.7.3); HP DL20 G10 (BIOS 1.80, 2023-07-20); ASUS RS100-E10-PI2 (BIOS 5601); ASRock E3C246D4U2-2T; GIGABYTE MX33-BS1 (BIOS F06).
+- On Azure, use DCsv3 or DCdsv3 (Ice Lake, EPC large enough for the 2 GiB heap). Ubuntu 22.04 and 24.04 both use Intel’s quote provider and the DCAP 1.22 Azure file below. Do not install `az-dcap-client`.
+- Do not use DCsv2. It is Xeon E-2288G. The largest published EPC is 168 MiB, below the heap.
+- Do not use DCasv5, DCadsv5, ECasv5, or ECadsv5 (AMD SEV-SNP), or DCesv5, DCesv6, and EC TDX sizes. They do not load this enclave.
+- On another provider, use the same device nodes and `check-hw`. You still need the allowlist.
+- Do not use a Client Core CPU after the 11th generation, an EPID-only platform, AMD, or ME-only SGX.
+- The signed mainnet enclave heap is `0x80000000` (2 GiB) plus an 8 MiB stack. A smaller EPC cannot start it.
+- Give the host 32 GB RAM, 20 GB or more of swap, and a 512 GB SSD. 64 GB and 1 TB NVMe is the larger size.
+
+## Steps
+
+1. On a physical machine, install the latest BIOS, enable SGX (not software-controlled), disable Secure Boot, and disable hyperthreading. On 3rd Gen Xeon Scalable and newer, FLC is already on and is not a BIOS switch. On Azure DCsv3 or DCdsv3, skip the BIOS menu and pick a Gen2 image.
+
+2. Confirm OS and CPU flags:
+
+```bash
+. /etc/os-release
+# VERSION_ID must be 22.04 or 24.04
+uname -r
+grep -m1 '^flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(sgx|sgx_lc)$'
+```
+
+3. Confirm the in-kernel nodes. Do not install the out-of-tree `.bin` driver on a kernel that already has in-kernel SGX.
+
+```bash
+ls -l /dev/sgx_enclave /dev/sgx_provision
+dmesg | grep -i sgx
+```
+
+If the nodes are missing on 22.04 or 24.04, turn SGX on in firmware, use a CPU with FLC, or use an SGX VM. Intel’s kernel floor is 5.11. Ubuntu 22.04 GA is 5.15 and 24.04 GA is 6.8.
+
+4. Install the DCAP runtime from Intel’s apt repo (keyring and `${VERSION_CODENAME}` from `/etc/os-release`). The build pin is PSW `2.25.100.3` and DCAP `1.22.100.3` for `jammy1` or `noble1`. Intel apt may publish newer packages.
+
+On a physical host and on Azure DCsv3 or DCdsv3, Ubuntu 22.04 or 24.04, install the Intel quote provider:
+
+```bash
+. /etc/os-release
+curl -fsSL https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key \
+  | gpg --dearmor | sudo tee /usr/share/keyrings/intel-sgx-archive-keyring.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/intel-sgx-archive-keyring.gpg] https://download.01.org/intel-sgx/sgx_repo/ubuntu ${VERSION_CODENAME} main" \
+  | sudo tee /etc/apt/sources.list.d/intel-sgx.list
+sudo apt-get update
+sudo apt-get install -y \
+  libsgx-aesm-launch-plugin libsgx-enclave-common libsgx-epid libsgx-launch \
+  libsgx-quote-ex libsgx-uae-service libsgx-qe3-logic libsgx-pce-logic \
+  libsgx-aesm-pce-plugin libsgx-dcap-ql libsgx-dcap-quote-verify libsgx-urts \
+  sgx-aesm-service libsgx-aesm-ecdsa-plugin libsgx-aesm-quote-ex-plugin \
+  libsgx-ae-qve libsgx-dcap-default-qpl
+```
+
+5. Write `/etc/sgx_default_qcnl.conf` before you enable and restart `aesmd`.
+
+On other hosts, point the quote provider at Intel PCS:
+
+```bash
+sudo tee /etc/sgx_default_qcnl.conf <<'EOF'
+{"pccs_url":"https://api.trustedservices.intel.com/sgx/certification/v4/","use_secure_cert":true,"retry_times":6,"retry_delay":10,"pck_cache_expire_hours":168,"verify_collateral_cache_expire_hours":168,"local_cache_only":false}
+EOF
+```
+
+On Azure DCsv3 or DCdsv3, Ubuntu 22.04 or 24.04:
+
+```bash
+sudo tee /etc/sgx_default_qcnl.conf <<'EOF'
+{"pccs_url":"https://global.acccache.azure.net/sgx/certification/v4/","use_secure_cert":true,"collateral_service":"https://api.trustedservices.intel.com/sgx/certification/v4/","pccs_api_version":"3.1","retry_times":6,"retry_delay":5,"local_pck_url":"http://169.254.169.254/metadata/THIM/sgx/certification/v4/","pck_cache_expire_hours":48,"verify_collateral_cache_expire_hours":48,"custom_request_options":{"get_cert":{"headers":{"metadata":"true"},"params":{"api-version":"2021-07-22-preview"}}}}
+EOF
+```
+
+6. Enable and restart the AESM service:
+
+```bash
+sudo systemctl enable --now aesmd
+sudo systemctl restart aesmd
+systemctl is-active aesmd
+```
+
+7. Add your user to `sgx` and `sgx_prv`, install udev rules, and fix device permissions. `usermod` does not affect your current shell; run `init-enclave` through `sg` so the groups apply without logging out.
+
+```bash
+NODE_USER="${USER}"
+sudo groupadd sgx 2>/dev/null || true
+sudo groupadd sgx_prv 2>/dev/null || true
+sudo usermod -aG sgx,sgx_prv "$NODE_USER"
+sudo tee /etc/udev/rules.d/99-sgx-permissions.rules <<'EOF'
+SUBSYSTEM=="misc", KERNEL=="sgx_enclave", MODE="0660", GROUP="sgx"
+SUBSYSTEM=="misc", KERNEL=="sgx_provision", MODE="0660", GROUP="sgx_prv"
+EOF
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+sudo chgrp sgx /dev/sgx_enclave
+sudo chmod 0660 /dev/sgx_enclave
+sudo chgrp sgx_prv /dev/sgx_provision
+sudo chmod 0660 /dev/sgx_provision
+```
+
+8. On a multi-socket Xeon Scalable, configure `sgx-ra-service` and read `/var/log/mpa_registration.log`.
+
+9. Install the mainnet deb so the signed enclave is on disk. Stop before `init-enclave` and before `tx register`. Do not start `secret-node`. Follow [Install secretd](/operators/install).
+
+10. `check-hw` from a directory that contains `check_hw_enclave.so`. The kit binary is at `kits/v1.27.2/mainnet/check-hw/check-hw`. Copy the signed enclave out of the deb:
+
+```bash
+. /etc/os-release
+mkdir -p "$HOME/check-hw" && cd "$HOME/check-hw"
+curl -fsSL https://docs.scrt.network/check-hw -o check-hw
+chmod +x check-hw
+dpkg-deb -x /tmp/secretnetwork_1.27.2_MAINNET_goleveldb_amd64_ubuntu-${VERSION_ID}.deb /tmp/sn127
+cp /tmp/sn127/usr/lib/librust_cosmwasm_enclave.signed.so ./check_hw_enclave.so
+sg sgx -c "sg sgx_prv -c './check-hw'"
+```
+
+Success text:
+
+```text
+Creating enclave instance..
+DCAP attestation obtained and verified ok
+DCAP attestation: Enclave quote is valid
+Platform verification successful! You are able to run a mainnet Secret node
+Your machine ID: <40 hex chars>
+```
+
+`check-hw` verifies the quote with the allowlist check off. It accepts `SGX_QL_QV_RESULT_OK` and `SGX_QL_QV_RESULT_SW_HARDENING_NEEDED`. If the result is not `OK`, it prints a warning and still treats the quote as verified. The allowlist check happens later, on chain.
+
+Save the machine id. It is the first 20 bytes of SHA-256 over the platform PPID (40 hex characters). It changes if you toggle SGX, reset it in BIOS, replace the board or CPU, or install some firmware updates.
+
+- If `check-hw` succeeds and `tx register auth` fails the allowlist, continue at [Allowlist and machine replacement](/operators/allowlist).
+- Do not run `embed_azure_attestation.sh`.
+- The deb depends only on `libsnappy1v5`. `dpkg -i` can succeed and `secretd` can still fail looking for `libsgx_urts.so.2`, `libsgx_dcap_ql.so.1`, or `libsgx_dcap_quoteverify.so.1`.
+- Do not set `SGX_MODE=SW`.
+- Check `check-hw` against sha256 `5f1fb76fb611e91bd8bb1ec3f12bb21216d66a0782b6bf21968309897c2c122d` in `kits/v1.27.2/SHA256SUMS`.
+
+Run every step on a new machine. If this hardware already quoted and you only changed the OS, repeat the OS, device, and DCAP steps, then follow [Upgrade a seeded node](/operators/upgrade/v1.27.2). Skip `check-hw` on a machine that is already signing. Run it before a new registration.

@@ -1,0 +1,106 @@
+---
+title: "Register the node"
+description: "Produce a DCAP quote and sign tx register auth."
+slug: "operators/register"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+Use this on a new machine, or after you reset the enclave. If the node already has a seed, follow [Upgrade a seeded node](/operators/upgrade/v1.27.2) and do not register again.
+
+Finish [SGX prerequisites](/operators/sgx). Use `secretd` 1.27.2. `~/.secretd/config/priv_validator_key.json` must already exist, from `secretd init` on this home or copied from the machine you are replacing. Stop the old process before you copy that key. Create the fee key in the file keyring if that name is not already there. It is not the consensus key. The key needs at least 0.07 SCRT (70,000 `uscrt`) before you sign.
+
+```bash
+secretd config set client keyring-backend file
+secretd config set client chain-id secret-4
+secretd keys add KEY --keyring-backend file
+```
+
+Skip `keys add` when that name is already in the file keyring.
+
+:::notice
+`auto-register` is being rebuilt.
+:::
+
+`init-enclave` writes a DCAP quote. The report data is the registration public key plus the ed25519 public key of `priv_validator_key.json`, unless you pass `--unbound-attestation`. `tx register auth` submits `attestation_combined.bin`. On Azure, submit the file `init-enclave` wrote. Do not send it to Azure Attestation and do not replace it. On success, `configure-secret` writes `~/.secretd/.node/new_seed.json`. Do not run `secretd start` until that file exists. Without it, start panics `Initialize node seed failed`.
+
+## Steps
+
+```bash
+sg sgx -c "sg sgx_prv -c 'secretd init-enclave'"
+
+secretd tx register auth /opt/secret/.sgx_secrets/attestation_combined.bin \
+  --from KEY --chain-id secret-4 \
+  --keyring-backend file \
+  --node https://rpc.secret.mainnet.secret3.dev \
+  --gas 700000 --gas-prices 0.1uscrt
+
+# wait until that transaction is in a block
+
+secretd query register secret-network-params \
+  --node https://rpc.secret.mainnet.secret3.dev
+
+NODE_ID=$(secretd dump /opt/secret/.sgx_secrets/pubkey.bin)
+SEED=$(secretd query register seed "$NODE_ID" \
+  --node https://rpc.secret.mainnet.secret3.dev | sed 's/^0x//')
+secretd configure-secret node-master-key.txt "$SEED"
+```
+
+Run `secret-network-params` and `configure-secret` from the directory that contains `node-master-key.txt`.
+
+```bash
+test -s ~/.secretd/.node/new_seed.json
+```
+
+If `genesis.json` is still the placeholder, run `restore.sh` from [Sync](/operators/full-node) before you enable the unit. `restore.sh` refuses to run without `new_seed.json` or `seed.json`. After restore finishes:
+
+```bash
+sudo systemctl enable --now secret-node
+```
+
+## Files and flags
+
+| Item | Value |
+| --- | --- |
+| Secrets directory | `$SCRT_SGX_STORAGE`, or `/opt/secret/.sgx_secrets` |
+| Quote file | `attestation_combined.bin` in that directory. EPID section length 0. |
+| Registration public key | `pubkey.bin`, 32 raw bytes. `secretd dump` prints 64 hex characters, no `0x`. |
+| Sealed registration key | `data.sealed` |
+| Id accepted by `query register seed` | exactly 64 hex characters |
+| Files `secret-network-params` writes | `node-master-key.txt` and `io-master-key.txt` in the cwd, mode `0600`, base64 |
+| Seed file | `$HOME/.secretd/.node/new_seed.json`, mode `0600`, `version` 2 |
+| Seed string | hex, no `0x`, length a multiple of 96 |
+| `init-enclave` flags | `--reset`, `--migration`, `--unbound-attestation` |
+
+Create a custom `SCRT_SGX_STORAGE` directory before `init-enclave`. The command does not create a missing custom path. The unit sets `SCRT_ENCLAVE_DIR` for `secret-node`.
+
+## Confirm the transaction
+
+On success the message event has `signer`, `encrypted_seed` (`0x` plus hex), and `node_id` (`0x` plus 64 hex). Tx response `data` is `S: ` plus the ciphertext hex. Failure is `Failed to authenticate node` (codespace `register`, code 2). `query register seed` prints `0x` plus hex and a newline. `sed 's/^0x//'` matches that. An unknown id returns `Failed to query seed for …`. `secret-network-params` prints a one-line JSON object and a literal `/n`. Success is the two files on disk. `configure-secret` exits 0 and prints the seed to stdout. Do not start on a seed query that ran before the register transaction was in a block.
+
+Use RPC `https://rpc.secret.mainnet.secret3.dev` and chain-id `secret-4`. LCD `https://lcd.secret.mainnet.secret3.dev` serves `GET /registration/v1beta1/tx-key`, `/registration-key`, and `/encrypted-seed/{pub_key}`.
+
+## Reset and re-register
+
+- `secretd reset-enclave` deletes `~/.secretd/.node/new_seed.json` and the secrets directory, then recreates the directory. Your account keys stay.
+- `init-enclave --reset` generates a new registration key and does not delete `new_seed.json`. The new `pubkey.bin` is a new node id. Fetch the seed for the new id after the new transaction commits.
+- If `data.sealed` already exists, `init-enclave` without `--reset` keeps it and only refreshes the quote.
+
+If the local height is above the snapshot:
+
+- The blocks above the snapshot are still on disk. Do not restore this snapshot onto this enclave. Put those blocks back.
+- This consensus key is already a live validator. Do not register a second seed to get past the snapshot.
+
+## Upgrade
+
+If you are already on 1.27.2 and you have a seed, do not register. Follow [Upgrade a seeded node](/operators/upgrade/v1.27.2). A quote from an older binary fails as `MrEnclaveMismatch`. Produce the quote with the 1.27.2 enclave. Mainnet measurement is `f0d59dd2561b1c86de88ef27b8b9146bcc2c1b02875ba3c48db48a32bb20d90b`.
+
+## Warnings
+
+- Do not pass `--unbound-attestation` if you may later use `--replace-machine-id`. An unbound quote omits the validator key and cannot prove ownership of the old machine id.
+- If the machine is not on the allowlist, registration is rejected. `The CPU is deprecated. Running forbidden` means the FMSPC is in the end-of-life set. Follow [Allowlist and machine replacement](/operators/allowlist).
+- `configure-secret` rejects a bad seed with `invalid encrypted seed format (requires hex string of multiples of 96 bytes without 0x prefix)`. Strip the `0x` prefix.
+- Keep `/opt/secret/.sgx_secrets/` (`data.sealed`, `attestation_combined.bin`, `pubkey.bin`), `~/.secretd/.node/new_seed.json`, `config/node_key.json`, `config/genesis.json`, and `config/config.toml`. If you delete the seed or the sealed key, register again.
+- `init-enclave` requires `priv_validator_key.json` on this home.
+
+After the seed file exists, go to [Sync](/operators/full-node).

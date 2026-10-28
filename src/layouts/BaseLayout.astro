@@ -1,0 +1,124 @@
+---
+/**
+ * The docs shell: head and SEO tags, the top bar, a sticky sidebar (from `lg`), the page in
+ * the middle with the footer under it, and the optional `toc` slot on the right (from `xl`).
+ * Full width (`data-wide` on <html>) is applied before paint from localStorage.
+ */
+import "../styles/global.css";
+import Header from "../components/Header.astro";
+import Sidebar from "../components/Sidebar.astro";
+import Footer from "../components/Footer.astro";
+import { site } from "../data/site";
+
+interface Props {
+  title?: string;
+  description?: string;
+  noindex?: boolean;
+  /** Slug of the current page, for the sidebar. */
+  current?: string;
+  section?: string;
+  /** URL of the page's Markdown export, advertised as an alternate. */
+  markdown?: string;
+}
+const { title, description = site.description, noindex, current, section, markdown } = Astro.props;
+const fullTitle = title ? `${title} | ${site.name}` : site.name;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL(site.ogImage, Astro.site);
+const hasToc = Astro.slots.has("toc");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#050505" />
+    <script is:inline>
+      try {
+        if (localStorage.getItem("docs:wide"))
+          document.documentElement.setAttribute("data-wide", "");
+      } catch {}
+    </script>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    {markdown && <link rel="alternate" type="text/markdown" href={markdown} />}
+    <link rel="help" type="text/plain" href="/llms.txt" title="Documentation index for AI agents" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content={site.name} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <Header current={current} section={section} />
+    <div
+      class:list={[
+        "docs-grid mx-auto grid max-w-[90rem] lg:grid-cols-[16rem_minmax(0,1fr)]",
+        hasToc && "xl:grid-cols-[16rem_minmax(0,1fr)_15rem]",
+      ]}
+    >
+      <aside class="sticky top-14 hidden h-[calc(100dvh-3.5rem)] overflow-y-auto border-r border-line py-6 pr-4 pl-3 lg:block">
+        <Sidebar current={current} />
+      </aside>
+      <main id="main" class="min-w-0 px-4 pt-8 pb-16 md:px-10 md:pt-10 xl:px-14">
+        <slot />
+        <Footer />
+      </main>
+      {hasToc && (
+        <aside class="hidden pr-6 xl:block">
+          <slot name="toc" />
+        </aside>
+      )}
+    </div>
+
+    <a
+      href="#"
+      data-to-top
+      aria-label="Back to top"
+      class="fixed right-5 bottom-5 z-30 inline-flex size-10 items-center justify-center rounded-pill border border-line-strong bg-surface text-muted opacity-0 transition-[opacity,color] hover:text-fg data-[shown]:opacity-100"
+      tabindex="-1"
+    >
+      ↑
+    </a>
+
+    <script>
+      // Copy buttons on code blocks.
+      for (const pre of document.querySelectorAll<HTMLPreElement>(".prose-secret pre.astro-code")) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "code-copy";
+        button.textContent = "Copy";
+        button.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(pre.querySelector("code")?.innerText ?? "");
+            button.textContent = "Copied";
+          } catch {
+            button.textContent = "Failed";
+          }
+          setTimeout(() => (button.textContent = "Copy"), 1500);
+        });
+        const wrap = document.createElement("div");
+        wrap.className = "code-wrap";
+        pre.replaceWith(wrap);
+        wrap.append(pre, button);
+      }
+
+      // Back-to-top button after one screen of scrolling.
+      const top = document.querySelector<HTMLElement>("[data-to-top]")!;
+      const onScroll = () => {
+        const shown = window.scrollY > window.innerHeight;
+        top.toggleAttribute("data-shown", shown);
+        top.tabIndex = shown ? 0 : -1;
+      };
+      window.addEventListener("scroll", onScroll, { passive: true });
+      onScroll();
+    </script>
+  </body>
+</html>

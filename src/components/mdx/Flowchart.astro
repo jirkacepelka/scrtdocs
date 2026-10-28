@@ -1,0 +1,54 @@
+---
+/**
+ * Mermaid flowchart (docs.scrt.network's <Flowchart>). The chart source is rendered on the
+ * client with the site's colours; until then, and without JavaScript, the label is shown.
+ */
+interface Props {
+  label: string;
+  chart: string;
+}
+const { label, chart } = Astro.props;
+---
+
+<figure class="flowchart" role="img" aria-label={label}>
+  <pre class="flowchart-src" data-flowchart>{chart}</pre>
+  <figcaption>{label}</figcaption>
+</figure>
+
+<script>
+  const charts = [...document.querySelectorAll<HTMLElement>("[data-flowchart]")];
+  if (charts.length) {
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string, fallback: string) =>
+      css.getPropertyValue(`--color-${name}`).trim() || fallback;
+    const { default: mermaid } = await import("mermaid");
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      fontFamily: css.getPropertyValue("--font-sans").trim() || "sans-serif",
+      themeVariables: {
+        darkMode: true,
+        background: token("surface", "#0d0d0d"),
+        primaryColor: token("ink", "#050505"),
+        primaryTextColor: token("fg", "#f4f3f1"),
+        primaryBorderColor: token("surface-3", "#222426"),
+        lineColor: token("accent-300", "#ff7d4a"),
+        secondaryColor: token("surface-2", "#161616"),
+        tertiaryColor: token("surface-2", "#161616"),
+        clusterBkg: token("surface-2", "#161616"),
+        clusterBorder: token("surface-3", "#222426"),
+        edgeLabelBackground: token("surface", "#0d0d0d"),
+        textColor: token("muted", "#a3a3a3"),
+        fontSize: "14px",
+      },
+    });
+    for (const [i, el] of charts.entries()) {
+      try {
+        const { svg } = await mermaid.render(`flowchart-${i}`, el.textContent ?? "");
+        el.outerHTML = `<div class="flowchart-svg">${svg}</div>`;
+      } catch {
+        // Leave the source and caption visible if a chart fails to render.
+      }
+    }
+  }
+</script>

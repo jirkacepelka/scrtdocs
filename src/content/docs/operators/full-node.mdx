@@ -1,0 +1,95 @@
+---
+title: "Sync"
+description: "Catch up a secret-4 process from the pruned snapshot."
+slug: "operators/full-node"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+Finish [Create the node home](/operators/home), [Register the node](/operators/register), and [SGX prerequisites](/operators/sgx) first.
+
+Require a non-empty `~/.secretd/.node/new_seed.json` or `seed.json`. `secretd version` must be `1.27.2` or newer. You need `curl`, `tar`, `sha256sum`, `jq`, and `zstd` or `pzstd`.
+
+## Snapshot
+
+<RestoreCurl />
+
+Download `restore.sh` from the host that served this page. The script fetches `latest.json` and the tarball from `https://mainnet-secret-snapshot.secret3.dev`.
+
+`restore.sh` exits immediately when `hostname -s` is `archive-00` or `archive-01`.
+
+Run it as the account that owns `~/.secretd`.
+
+The restore replaces `data/`, `.compute/`, `config/genesis.json`, and `config/addrbook.json`.
+
+It keeps `config/config.toml`, `config/priv_validator_key.json`, and `.node/`.
+
+Before this script starts `secret-node`, set `iavl-disable-fastnode = true` in the root of `app.toml`, above the first `[section]`. The fresh value is `false`. A copy under `[wasm]` is ignored. `restore.sh` does not edit `app.toml`.
+
+It does not replace `/opt/secret/.sgx_secrets/data-<mrenclave>.bin`. It compares the local RPC height only when `127.0.0.1:26657` answers. If that port does not answer and `application.db` or `blockstore.db` is already there, `restore.sh` stops and changes nothing.
+
+`restore.sh` writes `priv_validator_state.json` at height 0. Leave it.
+
+If the local height is above the snapshot:
+
+- The blocks above the snapshot are still on disk. Do not restore this snapshot onto this enclave. Put those blocks back.
+- This consensus key is already a live validator. Do not register a second seed to get past the snapshot.
+
+The node is caught up when `catching_up` is `false` and the local height matches `https://rpc.secret.mainnet.secret3.dev/status` within a block or two.
+
+## Watch
+
+```bash
+journalctl -u secret-node -f
+curl -fsS http://127.0.0.1:26657/status
+curl -fsS http://127.0.0.1:26657/net_info
+```
+
+While catching up, require the unit `active`, `secretd version` `1.27.2`, `.result.sync_info.catching_up` `true`, `latest_block_height` increasing across two samples, `.result.node_info.network` `secret-4`, and `n_peers` greater than 0. `max_num_outbound_peers` is 40, so a handful of peers is enough.
+
+Caught up means `catching_up` is `false` and local height matches `https://rpc.secret.mainnet.secret3.dev/status` within a block or two.
+
+Point the CLI at the local RPC only after the node is up:
+
+```bash
+secretd config set client chain-id secret-4
+secretd config set client node tcp://127.0.0.1:26657
+```
+
+Registration commands pass `--node` and `--chain-id` on the command line. After this process is up, point the CLI at it. Do not leave the CLI on the public RPC when you mean to query this process.
+
+## Day-2
+
+```bash
+sudo systemctl start secret-node
+sudo systemctl stop secret-node
+sudo systemctl restart secret-node
+systemctl status secret-node
+journalctl -u secret-node -n 100 --no-pager
+```
+
+The unit uses `Restart=on-failure`, `RestartSec=3`, and `StartLimitInterval=0`, so systemd keeps retrying. A later package install overwrites the unit. Copy the unit aside, as on [Upgrade a seeded node](/operators/upgrade/v1.27.2), before you restart after `dpkg`.
+
+`secretd check-enclave` is a local SGX check. The host steps are [SGX prerequisites](/operators/sgx).
+
+If the node already has a seed and is caught up, upgrade it and then use these health checks.
+
+## Failure modes
+
+| What you see | What to do |
+| --- | --- |
+| `auto-register is not available yet; register with tx register auth` | Follow [Register the node](/operators/register). |
+| Missing `libsgx_urts.so.2`, `libsgx_dcap_ql.so.1`, or `libsgx_dcap_quoteverify.so.1` | The deb is installed and the SGX runtime is not. Return to [SGX prerequisites](/operators/sgx). |
+| Dynamic linker error for `libgo_cosmwasm.so` or `librandom_api.so` | Put `/usr/lib` on the loader path, or finish the deb install. The unit sets `SCRT_ENCLAVE_DIR` for the enclave, not for these host libraries. |
+| `This machine is not on the PPID whitelist` | Follow [Allowlist and machine replacement](/operators/allowlist). |
+| `The CPU is deprecated. Running forbidden` | The FMSPC is in the end-of-life set. |
+| `invalid encrypted seed format …` | Strip the `0x` prefix. |
+| Panic `Initialize node seed failed` | `new_seed.json` and `seed.json` are missing or rejected. Register again. |
+| Halt and `minimum-gas-prices` empty | Set `minimum-gas-prices` to `0.1uscrt`. |
+| `genesis.json file already exists` | Do not re-init and do not pass `--overwrite`. Leave the home and continue at Register or Sync. `restore.sh` replaces the placeholder genesis. |
+| Height stuck, `n_peers` 0 | Seeds are empty or unreachable, or outbound TCP `26656` is blocked. |
+| `Height range not consequent` | The enclave's sealed height is ahead of the snapshot. The tarball did not replace `data-<mrenclave>.bin`. |
+| `catching_up` false while far below the release RPC | Genesis is wrong, or the process is not on `secret-4`. |
+| Unit runs as `root` and the seed is under your home | You ran `dpkg` from a root shell. Put the seed and genesis in that user’s home, or set `User=` to the account that owns them. |
+
+After `catching_up` is false, continue at [Validator](/operators/validator) or [RPC and LCD](/operators/rpc-lcd). Set archive pruning before the heights you need are committed.

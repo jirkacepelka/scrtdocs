@@ -1,0 +1,64 @@
+---
+/**
+ * Under the page title: when the page was updated, then Copy as Markdown, View as Markdown,
+ * Download .md and the MDX source. The Markdown is the page's /…/index.md export.
+ */
+import { Icon } from "astro-icon/components";
+
+interface Props {
+  updated: Date;
+  note?: string;
+  md: string;
+  mdx: string;
+  filename: string;
+}
+const { updated, note, md, mdx, filename } = Astro.props;
+const date = updated.toLocaleDateString("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+const action =
+  "inline-flex h-8 items-center gap-1.5 rounded-pill border border-line px-3 text-[0.8125rem] text-muted transition-colors hover:border-line-strong hover:bg-surface-2 hover:text-fg";
+---
+
+<div class="mt-6 flex flex-wrap items-center gap-2">
+  <button type="button" class={action} data-copy-md={md}>
+    <Icon name="ph:copy" class="size-3.5" aria-hidden="true" />
+    <span data-copy-label aria-live="polite">
+      Copy as Markdown
+    </span>
+  </button>
+  <a href={md} target="_blank" rel="noopener noreferrer" class={action}>
+    <Icon name="ph:file-md" class="size-3.5" aria-hidden="true" />
+    View as Markdown
+  </a>
+  <a href={md} download={filename} class={action}>
+    <Icon name="ph:download-simple" class="size-3.5" aria-hidden="true" />
+    Download .md
+  </a>
+  <a href={mdx} target="_blank" rel="noopener noreferrer" class={action}>
+    <Icon name="ph:code" class="size-3.5" aria-hidden="true" />
+    MDX source
+  </a>
+  <span class="ml-auto text-[0.8125rem] text-faint">
+    Updated{note && ` from ${note}`}, <time datetime={updated.toISOString()}>{date}</time>
+  </span>
+</div>
+
+<script>
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-md]")) {
+    const label = button.querySelector<HTMLElement>("[data-copy-label]")!;
+    button.addEventListener("click", async () => {
+      try {
+        const text = await fetch(button.dataset.copyMd!).then((r) => r.text());
+        await navigator.clipboard.writeText(text);
+        label.textContent = "Copied";
+      } catch {
+        label.textContent = "Copy failed";
+      }
+      setTimeout(() => (label.textContent = "Copy as Markdown"), 2000);
+    });
+  }
+</script>

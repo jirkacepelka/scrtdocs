@@ -1,0 +1,38 @@
+---
+title: "Quick Setup"
+description: "Run secret-setup.py to install secretd 1.27.2, register the node, and restore the secret-4 snapshot."
+slug: "index"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+<SetupNodeCurl />
+
+Run it on Ubuntu 22.04 or 24.04, `x86_64`, as the account that will own `~/.secretd`. Do not run it as root. If `genesis.json` already exists, the script skips the moniker and `secretd init`. It still asks for the key, the password, public RPC, public gRPC, and public LCD. It asks for prune only when `app.toml` has no pruning line. It rewrites `p2p.seeds` to the seven Home-page peers and leaves `persistent_peers` as they are. On a physical host, enable SGX in firmware first. On Azure, use a DCsv3 or DCdsv3 Gen2 image. The script installs the Intel DCAP packages, writes `/etc/sgx_default_qcnl.conf` for that host, enables and restarts `aesmd`, adds your user to `sgx` and `sgx_prv`, then runs `init-enclave`.
+
+On a new home it asks, in this order:
+
+1. Moniker.
+2. Key name. Use letters, digits, `.`, `_`, or `-`.
+3. Keyring password. It is not echoed. Use at least 8 characters and at most 72 bytes. If that name is already in the file keyring, the script uses it. If it is not, the script creates it and prints the mnemonic. Write the mnemonic down.
+4. Public RPC? Answer `yes` or `no`.
+5. Public gRPC? Answer `yes` or `no`.
+6. Public LCD? Answer `yes` or `no`. Yes does not bind `0.0.0.0`.
+7. Prune setting: `default`, `nothing`, or `everything`. `nothing` keeps archive state. `archive` is accepted as `nothing`.
+
+Then it does this:
+
+1. Install `curl`, `ca-certificates`, `jq`, `zstd`, `tar`, and `libsnappy1v5`.
+2. Probe Azure metadata for one second with `--noproxy '*'`. A DCsv3 or DCdsv3 answer and any other host both install the full Intel list, including `libsgx-dcap-default-qpl`. Do not install `az-dcap-client`. Then download the v1.27.2 `MAINNET` deb for that Ubuntu release, check the release SHA-256, and install it with `dpkg -i`. Require `secretd version` to print `1.27.2`. The deb does not ship `libsgx_dcap_ql.so.1`, `libsgx_dcap_quoteverify.so.1`, or `libsgx_urts.so.2`.
+3. Set the client keyring backend to `file` and the client chain-id to `secret-4`.
+4. Run `secretd init <moniker> --chain-id secret-4` when the home is new. On resume, skip this step.
+5. Set `p2p.seeds` in `config.toml` to the seven public secret-4 peers on [Create the node home](/operators/home). On a new home, leave `persistent_peers` empty. On resume, leave `persistent_peers` unchanged. For chain-id `secret-4`, `init` writes three peers, `scrt-seed-01.scrtlabs.com`, `scrt-seed-02.scrtlabs.com`, and `scrt-seed-03.scrtlabs.com`. This step replaces that line.
+6. Write `/etc/sgx_default_qcnl.conf` for the host from step 2, then enable and restart `aesmd`, then add your user to `sgx` and `sgx_prv`. A physical host gets Intel PCS v4. Azure 22.04 and Azure 24.04 get the DCAP 1.22 file: PCK from THIM, collateral from Intel PCS v4.
+7. Run `secretd init-enclave` under `sg sgx` / `sgx_prv` so the new groups apply without logging out.
+8. Sign `tx register auth` for `/opt/secret/.sgx_secrets/attestation_combined.bin` (`$SCRT_SGX_STORAGE` if you set it). Send it to `https://rpc.secret.mainnet.secret3.dev` with `--from` your key, `--chain-id secret-4`, `--keyring-backend file`, `--gas 700000`, and `--gas-prices 0.1uscrt`. The password goes on stdin. Do not use `--gas auto`.
+9. Wait until that transaction is in a block. If the machine is not on the allowlist, the script stops. If the balance is under 70,000 `uscrt` (0.07 SCRT), the script prints the address and stops before it sends the transaction.
+10. Run `secretd query register secret-network-params`, `secretd dump` on `pubkey.bin`, `secretd query register seed`, and `secretd configure-secret`. That writes `~/.secretd/.node/new_seed.json`.
+11. Set `pruning` to the value you chose. Set `iavl-disable-fastnode = true` in the root of `app.toml`. Leave RPC on `tcp://127.0.0.1:26657`, LCD on `tcp://127.0.0.1:1317`, and gRPC on `127.0.0.1:9090`. Answering yes does not bind `0.0.0.0`. If you answered yes, set `enabled-unsafe-cors = false` and publish a proxy on [RPC and LCD](/operators/rpc-lcd). Firewall `26657`, `1317`, `9090`, `6060`, and `26660`.
+12. Run `restore.sh` from this site. It downloads the snapshot from `https://mainnet-secret-snapshot.secret3.dev`. A rerun skips `restore.sh` when `data/application.db` or `data/blockstore.db` exists and `127.0.0.1:26657` does not answer, and it does not print Snapshot restore finished.
+
+If you will not run the script, follow Manual from [SGX prerequisites](/operators/sgx) through [Sync](/operators/full-node).

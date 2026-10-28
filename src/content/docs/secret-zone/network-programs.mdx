@@ -1,0 +1,28 @@
+---
+title: "Network programs"
+description: "A network program is a Secret Program the whole network depends on, so chain votes approve how it runs. Secret Money is a network program."
+slug: "secret-zone/network-programs"
+updated: 2026-10-28
+---
+
+:::note[Details pending]
+:::
+
+<p>{"A network program is a Secret Program the whole network depends on, so chain votes approve how it runs. Secret Money is a network program."}</p>
+
+<p>{"A chain vote names the software Secret Money runs and which validators' machines may run it."}</p>
+
+<p>{"One of those machines at a time holds the right to write Secret Money's records. The others stay ready to take over."}</p>
+
+<p>{"Secret Money regularly records a checkpoint of its state on the chain, and the chain accepts it only from the machine currently writing."}</p>
+
+<p>{"No other program can move Secret Money's coins, hold its funds, or read its records."}</p>
+
+<Flowchart
+  label="A chain vote names the software Secret Money runs and which validators' machines may run it."
+  chart={`flowchart TD
+  Vote[Chain vote] -->|names the software and machines| Machines[Approved validator machines]
+  Machines --> Writer[Machine currently writing]
+  Machines --> Standby[Machines ready to take over]
+  Writer -->|checkpoint| Chain[Public chain]`}
+/>

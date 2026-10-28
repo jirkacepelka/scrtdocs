@@ -1,0 +1,27 @@
+---
+title: "Secret Programs"
+description: "A Secret Program is a program the chain knows by name. Each one runs on its own confidential computer, separate from every other program. Secret Money, Accounts and Secret Zone's own services are Secret Programs."
+slug: "secret-zone/programs-and-sdk"
+updated: 2026-10-28
+---
+
+:::note[Details pending]
+:::
+
+<p>{"A Secret Program is a program the chain knows by name. Each one runs on its own confidential computer, separate from every other program. Secret Money, Accounts and Secret Zone's own services are Secret Programs."}</p>
+
+<p>{"An app is something you deploy through Secret Zone as a compose file. It runs on a Secret Zone program, so you don't register anything on the chain to launch it."}</p>
+
+<p>{"Before a program's computer gets its keys, the key machines check its hardware proof against the chain. The proof shows it is genuine confidential hardware running the approved operating system image and the approved version, on a machine its operator registered to their seat on the chain. The key machines repeat these checks on every key release, so a revoked machine or version is cut off on its next request."}</p>
+
+<p>{"Programs that keep records store them using the Secret SDK."}</p>
+
+<p>{"Who can add a new Secret Program, and in which cases a chain vote is needed, is still being determined."}</p>
+
+<Flowchart
+  label="Before a program's computer gets its keys, the key machines check its hardware proof against the chain."
+  chart={`flowchart TD
+  Computer[Program's computer] -->|hardware proof| Keys[Key machines, n of m]
+  Keys -->|checks against| Chain[Public chain]
+  Keys -->|keys, checked on every release| Computer`}
+/>

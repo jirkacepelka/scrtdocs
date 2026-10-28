@@ -1,0 +1,48 @@
+---
+title: "Overview"
+description: "The public chain is the record every program is checked against. A chain vote approves the operating system image all programs run on. A validator with a public seat registers a new program without a vote and becomes its owner, and the owner chooses which version runs until a chain vote makes the program tax-eligible, when chain votes take over. A program's computer gets its keys only after its hardware proves it is running exactly that image and version."
+slug: "secret-zone"
+updated: 2026-10-28
+---
+
+:::note[Details pending]
+:::
+
+<p>{"The public chain is the record every program is checked against. A chain vote approves the operating system image all programs run on. A validator with a public seat registers a new program without a vote and becomes its owner, and the owner chooses which version runs until a chain vote makes the program tax-eligible, when chain votes take over. A program's computer gets its keys only after its hardware proves it is running exactly that image and version."}</p>
+
+<p>{"Secret Zone is where you sign in and manage your sites, apps and storage, with one sign-in and one interface."}</p>
+
+<p>{"The edge is the public front door for every site and app, Accounts, the Scheduler and Secret Money. The computers behind it have no public address, so everything reaches them through the edge."}</p>
+
+<p>{"Accounts handles sign-in. Your login is sealed to Accounts before it reaches the edge, so the edge passes it on without being able to read it."}</p>
+
+<p>{"Key machines are a group run separately from the validators. A program's keys are released only when the required number of them agree (n of m, with the numbers set by chain vote), and only to a computer that proves it's running an approved program. The rules they follow are public on the chain."}</p>
+
+<p>{"Secret Money is the network's money program, and the only program that can move its coins. A chain vote names the software it runs and which validators' machines may run it. Every other program runs on its own computer and can't touch Secret Money's coins or records."}</p>
+
+<p>{"Moving coins into or out of Secret Money is a public chain transaction. Transfers inside it happen off the chain. Each one is sealed to Secret Money before it reaches the edge, so only Secret Money can read it, and it shows as sent only after Secret Money confirms it."}</p>
+
+<Flowchart
+  label="Everything reaches the computers through the edge, and key machines release keys only to a computer that proves it runs an approved program."
+  chart={`flowchart TD
+  You[You] --> Edge[Edge]
+  subgraph Computers[Computers with no public address]
+    Accounts[Accounts]
+    Apps[Sites and apps]
+    Scheduler[Scheduler]
+    Money[Secret Money]
+  end
+  Edge --> Accounts
+  Edge --> Apps
+  Edge --> Scheduler
+  Edge --> Money
+  Chain[Public chain] -->|rules| Keys[Key machines, n of m]
+  Keys -->|keys after hardware proof| Computers`}
+/>
+
+## In this section
+
+- [User journey](/secret-zone/user-journey)
+- [Builder journey](/secret-zone/builder-journey)
+- [Secret Programs](/secret-zone/programs-and-sdk)
+- [Network programs](/secret-zone/network-programs)

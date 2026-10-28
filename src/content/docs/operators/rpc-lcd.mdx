@@ -1,0 +1,238 @@
+---
+title: "RPC and LCD"
+description: "After catching_up is false, keep RPC, LCD, and gRPC on loopback and publish only a proxy."
+slug: "operators/rpc-lcd"
+updated: 2026-10-03
+updatedNote: "v1.27.2 notes"
+---
+
+Do this after the node is running and `catching_up` is false. `/health` does not check sync. It returns an empty result whenever the RPC process is up. For old heights, follow [Archive node](/operators/archive).
+
+## Listeners
+
+- RPC is CometBFT JSON-RPC, including WebSocket, in `config.toml` `[rpc]`.
+- LCD / API is the Cosmos SDK REST server, in `app.toml` `[api]`. Point secret.js at this port, not at RPC.
+- Cosmos gRPC is a third listener. The LCD dials it locally. Do not publish it.
+
+Both files are created only when missing. If the node already has configs, it keeps its binds.
+
+The fresh file already sets `api.address` to `tcp://localhost:1317` and `grpc.address` to `localhost:9090`. Change those two lines to `tcp://127.0.0.1:1317` and `127.0.0.1:9090`. Do not add a second address key.
+
+## Fresh RPC keys
+
+| Key | Fresh value |
+| --- | --- |
+| `laddr` | `tcp://127.0.0.1:26657` |
+| `cors_allowed_origins` | `[]` (empty disables CORS) |
+| `cors_allowed_methods` | `HEAD`, `GET`, `POST` |
+| `cors_allowed_headers` | `Origin`, `Accept`, `Content-Type`, `X-Requested-With`, `X-Server-Time` |
+| `grpc_laddr` | `""` (Comet’s own gRPC, only `/broadcast_tx_commit`, stays off) |
+| `grpc_max_open_connections` | `900` |
+| `unsafe` | `false` |
+| `max_open_connections` | `900` |
+| `max_subscription_clients` | `100` |
+| `max_subscriptions_per_client` | `5` |
+| `experimental_subscription_buffer_size` | `200` |
+| `experimental_websocket_write_buffer_size` | `200` |
+| `experimental_close_on_slow_client` | `false` |
+| `timeout_broadcast_tx_commit` | `10s` |
+| `max_request_batch_size` | `10` |
+| `max_body_bytes` | `1000000` |
+| `max_header_bytes` | `1048576` |
+| `tls_cert_file`, `tls_key_file` | `""` |
+| `pprof_laddr` | `localhost:6060` |
+
+`laddr` must include a scheme. Other fresh values: `proxy_app = "tcp://127.0.0.1:26658"`, `priv_validator_laddr = ""`, `[p2p] laddr = "tcp://0.0.0.0:26656"`, `prometheus = false`, `prometheus_listen_addr = ":26660"`, `discard_abci_responses = false`, `indexer = "kv"`. The SDK also sets `consensus.timeout_commit` to `5s` when the file is created (Comet default `1s`).
+
+## Fresh app keys
+
+A fresh Secret `app.toml` sets `minimum-gas-prices = "0.0125uscrt"` from the package default; set `minimum-gas-prices = "0.1uscrt"` before you start. Set `iavl-disable-fastnode = true` in that same root table before the first start. The fresh value in the table below is `false`. `[api] enable = true`, `swagger = true`, `enabled-unsafe-cors = true`, `[grpc-web] enable = true`, and `[grpc] concurrency = false`. The key name is `enabled-unsafe-cors`.
+
+| Key | Fresh Secret value |
+| --- | --- |
+| `[api] address` | `tcp://localhost:1317` |
+| `[api] max-open-connections` | `1000` |
+| `[api] rpc-read-timeout` | `10` seconds |
+| `[api] rpc-write-timeout` | `0` (no write timeout) |
+| `[api] rpc-max-body-bytes` | `1000000` |
+| `[grpc] enable` | `true` |
+| `[grpc] address` | `localhost:9090` (no `tcp://`) |
+| `[grpc] max-recv-msg-size` | `10485760` |
+| `[grpc] max-send-msg-size` | `2147483647` |
+| `[grpc] concurrency` | `false` |
+| `query-gas-limit` | `0` (unbounded) |
+| `pruning` | `default` |
+| `iavl-disable-fastnode` | `false` |
+
+`[api]` has no TLS fields. gRPC is plaintext. With `swagger = true`, the routes are `/swagger/`, `/openapi/`, and `/static/`. Leave gRPC enabled on localhost if the LCD is enabled. The gateway is attached only when `grpc.enable` is true. Plain `secretd start` keeps the file’s `enable = true`. An unchanged `--api.enable` flag does not override the file.
+
+An upgrade does not rewrite an existing `app.toml`. Read the file before you publish.
+
+## Steps
+
+Do this only after `catching_up` is false.
+
+1. Confirm the home is `~/.secretd` of the unit `User=`. `dpkg` overwrites that unit. See [Upgrade a seeded node](/operators/upgrade/v1.27.2).
+2. Read `http://127.0.0.1:26657/status`. Require `catching_up` false and network `secret-4`. Use `trinity-b` only if that is the chain this home is on.
+3. Edit `config.toml` toward the safe block below.
+4. Edit `app.toml` toward the safe block below.
+5. `sudo systemctl restart secret-node`.
+6. Run the health checks against localhost.
+7. Publish only the proxy on 443. Firewall `26657`, `1317`, `9090`, `6060`, and `26660`. P2P `26656` is separate and is bound to `0.0.0.0` by default.
+8. Point remote clients at the proxy, not at the loopback ports.
+
+```toml
+# config.toml
+priv_validator_laddr = ""
+
+[rpc]
+laddr = "tcp://127.0.0.1:26657"
+cors_allowed_origins = []
+grpc_laddr = ""
+unsafe = false
+max_open_connections = 900
+tls_cert_file = ""
+tls_key_file = ""
+pprof_laddr = ""
+
+[instrumentation]
+prometheus = false
+prometheus_listen_addr = "127.0.0.1:26660"
+```
+
+```toml
+# app.toml
+[api]
+enable = true
+swagger = false
+address = "tcp://127.0.0.1:1317"
+max-open-connections = 1000
+rpc-read-timeout = 10
+rpc-write-timeout = 30
+rpc-max-body-bytes = 1000000
+enabled-unsafe-cors = false
+
+[grpc]
+enable = true
+address = "127.0.0.1:9090"
+concurrency = false
+
+[grpc-web]
+enable = false
+```
+
+`rpc-write-timeout = 30` is the value to set. The fresh file has `0`. Set a finite value on any API reachable from the internet. If a browser calls RPC directly, set an explicit `cors_allowed_origins` list. `["*"]` is the template’s any-origin value. LCD has no origin allowlist. `enabled-unsafe-cors = true` allows every origin, including gRPC-Web. A fresh Secret file turns it on. Turn it off before the API port is reachable. Browsers that need LCD go through a proxy that sets a specific `Access-Control-Allow-Origin`.
+
+One-shot overrides belong in the unit `ExecStart` or they disappear on the next plain restart:
+
+```text
+secretd start \
+  --rpc.laddr tcp://127.0.0.1:26657 \
+  --api.enable=true \
+  --api.address tcp://127.0.0.1:1317 \
+  --api.swagger=false \
+  --api.enabled-unsafe-cors=false \
+  --grpc.enable=true \
+  --grpc.address 127.0.0.1:9090 \
+  --grpc-web.enable=false
+```
+
+Proxy sketch. WebSocket needs the upgrade headers. Timeouts should be longer than `timeout_broadcast_tx_commit` (default 10s).
+
+```nginx
+# RPC + WebSocket
+location / {
+  proxy_pass http://127.0.0.1:26657;
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection "upgrade";
+  proxy_read_timeout 60s;
+}
+
+# LCD on a different name
+location / {
+  proxy_pass http://127.0.0.1:1317;
+  proxy_read_timeout 60s;
+}
+```
+
+Do not put Cosmos gRPC `9090` on a public TCP listener. If you need remote gRPC, put a TLS-terminating gRPC proxy in front of `127.0.0.1:9090`. The node will not terminate that TLS. Keep RPC on loopback.
+
+WebSocket path is `/websocket`. Local URL `ws://127.0.0.1:26657/websocket`. Behind TLS, `wss://<rpc-host>/websocket`. `subscribe`, `unsubscribe`, and `unsubscribe_all` are WebSocket-only. Caps: 100 clients, 5 subscriptions each, buffers of 200.
+
+Leave `grpc.concurrency = false`. Concurrency is experimental and a source of node failures. `[wasm] store-sgx-data = true` does not make port `9090` safe to publish. It is still plaintext.
+
+The in-process limits are connection and body size. Put request-rate limits on the proxy. Limit `tx_search`, `block_search`, `abci_query`, and `broadcast_tx_commit`. `query-gas-limit = 0` means a REST or gRPC query may use unbounded gas. Contract queries use `wasm.contract-query-gas-limit` `10000000`.
+
+## Stay closed
+
+`unsafe = true` (registers `dial_seeds`, `dial_peers`, `unsafe_flush_mempool`), `pprof_laddr` on a public address, `--cpu-profile` on a public unit, Prometheus on all interfaces, LCD `/metrics` when telemetry is enabled, `enabled-unsafe-cors = true`, gRPC-Web unless the proxy is the product, `priv_validator_laddr` on a public address, the key files, Cosmos gRPC `9090`, Comet `grpc_laddr`, and swagger if the port is shared. `dump_consensus_state`, `consensus_state`, `net_info`, and `unconfirmed_txs` are on by default and are not behind `unsafe`. Publishing RPC publishes them.
+
+Port 9091 is not a default listener. gRPC-Web on this version shares port 1317.
+
+## Health checks
+
+```bash
+curl -fsS http://127.0.0.1:26657/status \
+  | jq '{network:.result.node_info.network, catching_up:.result.sync_info.catching_up, height:.result.sync_info.latest_block_height}'
+curl -fsS http://127.0.0.1:26657/abci_info \
+  | jq '.result.response | {data, version}'
+curl -fsS http://127.0.0.1:26657/health
+curl -fsS http://127.0.0.1:1317/cosmos/base/tendermint/v1beta1/node_info \
+  | jq '{network:.default_node_info.network, version:.application_version.version, app:.application_version.app_name}'
+curl -fsS http://127.0.0.1:1317/cosmos/base/node/v1beta1/status \
+  | jq '{height, earliest_store_height}'
+```
+
+Expect RPC `data` `secret`, `version` `1.27.2`, LCD `app` `secretd`. Historical header, only for a height the node stored:
+
+```bash
+curl -fsS -H 'x-cosmos-block-height: HEIGHT' \
+  http://127.0.0.1:1317/cosmos/base/tendermint/v1beta1/blocks/latest
+```
+
+Use a height this node has stored.
+
+## CLI
+
+```bash
+secretcli config set client node tcp://127.0.0.1:26657
+secretcli config set client chain-id secret-4
+secretcli status
+```
+
+Remote RPC:
+
+```bash
+secretcli config set client node https://rpc.secret.mainnet.secret3.dev
+secretcli config set client chain-id secret-4
+```
+
+`secretcli` speaks Comet RPC. It does not use port 1317. `client.toml` keys: `chain-id`, `keyring-backend`, `output`, `node`, `broadcast-mode`. Defaults: broadcast `sync`, keyring `os`, output `text`, node `tcp://localhost:26657`.
+
+`secretcli config node` and `secretcli config chain-id` without `set` are the pre-0.50 form. Do not use them. Do not set chain-id `pulsar-3`.
+
+secret.js:
+
+```js
+import { SecretNetworkClient } from "secretjs";
+
+const secretjs = new SecretNetworkClient({
+  url: "http://127.0.0.1:1317",
+  chainId: "secret-4",
+});
+```
+
+`url` is the LCD. Point it at the proxy in front of 1317, not at 26657 and not at 9090. A signer also needs `wallet` and `walletAddress`.
+
+## Public endpoints
+
+| Role | URL |
+| --- | --- |
+| RPC | `https://rpc.secret.mainnet.secret3.dev` |
+| LCD | `https://lcd.secret.mainnet.secret3.dev` |
+
+Rosetta is a subcommand and is not started by `secretd start`.
+
+Apply the safe block before you publish. On an upgrade, read the existing files. The package install will not fix them.
