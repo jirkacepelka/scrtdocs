@@ -1,8 +1,7 @@
 ---
 /**
  * Mermaid flowchart (docs.scrt.network's <Flowchart>). The chart source is rendered on the
- * client in the current theme's colours and re-rendered when the theme changes. Until then,
- * and without JavaScript, the source and the label are shown.
+ * client with the site's colours; until then, and without JavaScript, the label is shown.
  */
 interface Props {
   label: string;
@@ -11,93 +10,45 @@ interface Props {
 const { label, chart } = Astro.props;
 ---
 
-<figure class="flowchart not-content" role="img" aria-label={label}>
+<figure class="flowchart" role="img" aria-label={label}>
   <pre class="flowchart-src" data-flowchart>{chart}</pre>
   <figcaption>{label}</figcaption>
 </figure>
 
 <script>
-  const charts = [...document.querySelectorAll<HTMLElement>("[data-flowchart]")].map((el) => ({
-    el,
-    source: el.textContent ?? "",
-  }));
-
-  async function render() {
-    const { default: mermaid } = await import("mermaid");
+  const charts = [...document.querySelectorAll<HTMLElement>("[data-flowchart]")];
+  if (charts.length) {
     const css = getComputedStyle(document.documentElement);
-    const v = (name: string) => css.getPropertyValue(name).trim();
+    const token = (name: string, fallback: string) =>
+      css.getPropertyValue(`--color-${name}`).trim() || fallback;
+    const { default: mermaid } = await import("mermaid");
     mermaid.initialize({
       startOnLoad: false,
       theme: "base",
-      fontFamily: v("--sl-font"),
+      fontFamily: css.getPropertyValue("--font-sans").trim() || "sans-serif",
       themeVariables: {
-        darkMode: document.documentElement.dataset.theme !== "light",
-        background: v("--sl-color-bg"),
-        primaryColor: v("--sl-color-bg"),
-        primaryTextColor: v("--sl-color-white"),
-        primaryBorderColor: v("--sl-color-gray-5"),
-        lineColor: v("--sl-color-text-accent"),
-        secondaryColor: v("--sl-color-gray-6"),
-        tertiaryColor: v("--sl-color-gray-6"),
-        clusterBkg: v("--sl-color-gray-6"),
-        clusterBorder: v("--sl-color-gray-5"),
-        edgeLabelBackground: v("--sl-color-bg-nav"),
-        textColor: v("--sl-color-gray-2"),
+        darkMode: true,
+        background: token("surface", "#0d0d0d"),
+        primaryColor: token("ink", "#050505"),
+        primaryTextColor: token("fg", "#f4f3f1"),
+        primaryBorderColor: token("surface-3", "#222426"),
+        lineColor: token("accent-300", "#ff7d4a"),
+        secondaryColor: token("surface-2", "#161616"),
+        tertiaryColor: token("surface-2", "#161616"),
+        clusterBkg: token("surface-2", "#161616"),
+        clusterBorder: token("surface-3", "#222426"),
+        edgeLabelBackground: token("surface", "#0d0d0d"),
+        textColor: token("muted", "#a3a3a3"),
         fontSize: "14px",
       },
     });
-    for (const [i, chart] of charts.entries()) {
+    for (const [i, el] of charts.entries()) {
       try {
-        const { svg } = await mermaid.render(`flowchart-${i}-${Date.now()}`, chart.source);
-        const view = document.createElement("div");
-        view.className = "flowchart-svg";
-        view.innerHTML = svg;
-        chart.el.replaceWith(view);
-        chart.el = view;
+        const { svg } = await mermaid.render(`flowchart-${i}`, el.textContent ?? "");
+        el.outerHTML = `<div class="flowchart-svg">${svg}</div>`;
       } catch {
         // Leave the source and caption visible if a chart fails to render.
       }
     }
   }
-
-  if (charts.length) {
-    render();
-    new MutationObserver(render).observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-  }
 </script>
-
-<style>
-  .flowchart {
-    margin-top: 1.5rem;
-    border: 1px solid var(--sl-color-hairline);
-    border-radius: 1.25rem;
-    background:
-      radial-gradient(circle at center, var(--scrt-dot) 1px, transparent 1.4px) 0 0 / 18px 18px,
-      var(--sl-color-bg-nav);
-    padding: 1.5rem 1rem 1rem;
-  }
-  .flowchart-src {
-    margin: 0;
-    color: var(--sl-color-gray-3);
-    font-size: var(--sl-text-xs);
-    white-space: pre-wrap;
-  }
-  .flowchart :global(.flowchart-svg) {
-    display: flex;
-    justify-content: center;
-    overflow-x: auto;
-  }
-  .flowchart :global(.flowchart-svg svg) {
-    max-width: 100%;
-    height: auto;
-  }
-  figcaption {
-    margin-top: 1rem;
-    text-align: center;
-    font-size: var(--sl-text-sm);
-    color: var(--sl-color-gray-3);
-  }
-</style>

@@ -1,7 +1,7 @@
 ---
 /** The one-line node setup command (docs.scrt.network's <SetupNodeCurl />). */
-import { Code } from "@astrojs/starlight/components";
+import { Code } from "astro:components";
 import { commands } from "../../lib/docs";
 ---
 
-<Code code={commands.setup} lang="bash" />
+<Code code={commands.setup} lang="bash" theme="github-dark-default" />

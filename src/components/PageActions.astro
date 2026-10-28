@@ -1,9 +1,9 @@
 ---
 /**
- * Under the page title: Copy as Markdown, View as Markdown, Download .md and the MDX source,
- * then when the page was updated. The Markdown is the page's /…/index.md export.
+ * Under the page title: when the page was updated, then Copy as Markdown, View as Markdown,
+ * Download .md and the MDX source. The Markdown is the page's /…/index.md export.
  */
-import { Icon } from "@astrojs/starlight/components";
+import { Icon } from "astro-icon/components";
 
 interface Props {
   updated: Date;
@@ -19,28 +19,30 @@ const date = updated.toLocaleDateString("en-US", {
   day: "numeric",
   timeZone: "UTC",
 });
+const action =
+  "inline-flex h-8 items-center gap-1.5 rounded-pill border border-line px-3 text-[0.8125rem] text-muted transition-colors hover:border-line-strong hover:bg-surface-2 hover:text-fg";
 ---
 
-<div class="page-actions not-content">
-  <button type="button" class="action" data-copy-md={md}>
-    <Icon name="document" size="0.95em" />
+<div class="mt-6 flex flex-wrap items-center gap-2">
+  <button type="button" class={action} data-copy-md={md}>
+    <Icon name="ph:copy" class="size-3.5" aria-hidden="true" />
     <span data-copy-label aria-live="polite">
       Copy as Markdown
     </span>
   </button>
-  <a href={md} target="_blank" rel="noopener noreferrer" class="action">
-    <Icon name="external" size="0.95em" />
+  <a href={md} target="_blank" rel="noopener noreferrer" class={action}>
+    <Icon name="ph:file-md" class="size-3.5" aria-hidden="true" />
     View as Markdown
   </a>
-  <a href={md} download={filename} class="action">
-    <Icon name="download" size="0.95em" />
+  <a href={md} download={filename} class={action}>
+    <Icon name="ph:download-simple" class="size-3.5" aria-hidden="true" />
     Download .md
   </a>
-  <a href={mdx} target="_blank" rel="noopener noreferrer" class="action">
-    <Icon name="seti:code-search" size="0.95em" />
+  <a href={mdx} target="_blank" rel="noopener noreferrer" class={action}>
+    <Icon name="ph:code" class="size-3.5" aria-hidden="true" />
     MDX source
   </a>
-  <span class="updated">
+  <span class="ml-auto text-[0.8125rem] text-faint">
     Updated{note && ` from ${note}`}, <time datetime={updated.toISOString()}>{date}</time>
   </span>
 </div>
@@ -60,42 +62,3 @@ const date = updated.toLocaleDateString("en-US", {
     });
   }
 </script>
-
-<style>
-  .page-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 1.25rem;
-  }
-  .action {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    height: 2rem;
-    padding: 0 0.8rem;
-    border: 1px solid var(--sl-color-hairline-shade);
-    border-radius: 999px;
-    background: transparent;
-    color: var(--sl-color-gray-2);
-    font: inherit;
-    font-size: var(--sl-text-xs);
-    text-decoration: none;
-    cursor: pointer;
-    transition:
-      color 0.15s,
-      border-color 0.15s,
-      background-color 0.15s;
-  }
-  .action:hover {
-    border-color: var(--sl-color-gray-4);
-    background: var(--sl-color-gray-6);
-    color: var(--sl-color-white);
-  }
-  .updated {
-    margin-inline-start: auto;
-    font-size: var(--sl-text-xs);
-    color: var(--sl-color-gray-3);
-  }
-</style>
