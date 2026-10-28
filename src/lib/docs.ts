@@ -1,6 +1,6 @@
 /** Helpers for the docs collection: URLs, navigation order and the Markdown exports. */
 import { getCollection, type CollectionEntry } from "astro:content";
-import { nav, type NavGroup, type NavPage, type NavSection } from "../data/site";
+import { sidebarOrder } from "../data/site.mjs";
 
 export type DocPage = CollectionEntry<"docs">;
 
@@ -21,31 +21,8 @@ export async function getPages(): Promise<Map<string, DocPage>> {
   return new Map(pages.map((p) => [p.id, p]));
 }
 
-const isGroup = (item: NavPage | NavGroup): item is NavGroup => "group" in item;
-
-export interface NavEntry {
-  slug: string;
-  label: string;
-  section: NavSection;
-  group?: NavGroup;
-}
-
-/** Every page in sidebar order (a group's own page comes before its items). */
-export function flatNav(pages: Map<string, DocPage>): NavEntry[] {
-  const label = (p: NavPage) => p.label ?? pages.get(p.slug)?.data.title ?? p.slug;
-  return nav.flatMap((section) =>
-    section.items.flatMap((item) =>
-      isGroup(item)
-        ? [
-            ...(item.slug ? [{ slug: item.slug, label: item.group, section, group: item }] : []),
-            ...item.items.map((p) => ({ slug: p.slug, label: label(p), section, group: item })),
-          ]
-        : [{ slug: item.slug, label: label(item), section }],
-    ),
-  );
-}
-
-export { isGroup };
+/** Page ids in sidebar order (from src/data/site.mjs). */
+export const pageOrder = (): string[] => sidebarOrder();
 
 /** The page as Markdown, in the format docs.scrt.network serves at …/index.md. */
 export function toMarkdown(page: DocPage, site: URL): string {

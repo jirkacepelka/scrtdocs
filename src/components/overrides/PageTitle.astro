@@ -1,0 +1,70 @@
+---
+/**
+ * Breadcrumbs from the sidebar, the title, the page description, and the page actions
+ * (Markdown copy, view, download, MDX source, updated date).
+ */
+import Default from "@astrojs/starlight/components/PageTitle.astro";
+import PageActions from "../PageActions.astro";
+import { mdUrl, mdxUrl } from "../../lib/docs";
+
+type Entry = (typeof Astro.locals.starlightRoute.sidebar)[number];
+const { entry, id, sidebar } = Astro.locals.starlightRoute;
+const page = id || "index";
+
+/** Labels of the groups that lead to the current page. */
+function trail(entries: Entry[]): string[] | undefined {
+  for (const e of entries) {
+    if (e.type === "link" && e.isCurrent) return [];
+    if (e.type === "group") {
+      const rest = trail(e.entries);
+      if (rest) return [e.label, ...rest];
+    }
+  }
+}
+const crumbs = trail(sidebar) ?? [];
+const filename = `${page === "index" ? "quick-setup" : page.replaceAll("/", "-")}.md`;
+const { description, updated, updatedNote } = entry.data;
+---
+
+{crumbs.length > 0 && (
+  <nav aria-label="Breadcrumb" class="breadcrumbs">
+    <ol>
+      {crumbs.map((c) => (
+        <li>{c}</li>
+      ))}
+    </ol>
+  </nav>
+)}
+<Default />
+{description && <p class="page-description">{description}</p>}
+<PageActions
+  updated={updated}
+  note={updatedNote}
+  md={mdUrl(page)}
+  mdx={mdxUrl(page)}
+  filename={filename}
+/>
+
+<style>
+  .breadcrumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-3);
+  }
+  .breadcrumbs li + li::before {
+    content: "/";
+    margin-inline-end: 0.4rem;
+    color: var(--sl-color-gray-4);
+  }
+  .page-description {
+    margin-top: 0.75rem;
+    font-size: var(--sl-text-lg);
+    line-height: 1.55;
+    color: var(--sl-color-gray-2);
+  }
+</style>
